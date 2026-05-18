@@ -1,0 +1,26 @@
+# Ambientes Virtuais
+.venv/
+env/
+venv/
+ENV/
+
+# Variáveis de Ambiente (MUITO IMPORTANTE)
+.env
+
+# Banco de Dados SQLite
+*.db
+*.sqlite3
+financas.db
+
+# Cache do Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Configurações de Sistema e IDE
+.vscode/
+.idea/
+.DS_Store
+
+# Logs
+*.log
