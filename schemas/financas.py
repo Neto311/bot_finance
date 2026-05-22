@@ -11,4 +11,8 @@ class ResponseFinanca(BaseModel):
     valor: float
     categoria: str
     descricao: str
+    tipo: str
     data: datetime
+
+class Usuario(BaseModel):
+    saldo: float

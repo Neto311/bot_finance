@@ -11,9 +11,11 @@ client = Groq(api_key = GROQ)
 
 PROMPT = (
     "Você é um extrator de dados. Sua resposta deve conter APENAS um JSON puro, "
-    "sem explicações. Extraia do texto: 'valor', 'categoria', 'descricao' e 'data'."
+    "sem explicações. Extraia do texto: 'valor', 'categoria', 'descricao', 'tipo', 'data'."
     "Se a data nao for mencionada, use a data de hoje (formato YYYY-MM-DD)"
+    "O tipo deverá obrigatóriamente ser Débito ou Crédito, exatamente com essa escrita"
     "Se não encontrar algum dado, preencha como null."
+    "Os tipos podem ser débito ou crédito, caso não seja dito no texto, considera crédito"
     "Você é um extrator de dados financeiros. Extraia: 'valor' (float), 'categoria', 'descricao' e 'data'.\n"
     "Categorias sugeridas: Alimentação, Transporte, Lazer, Saúde, Moradia, Outros.\n"
     "Responda APENAS o JSON puro. Se não encontrar a categoria, use 'Outros'."
