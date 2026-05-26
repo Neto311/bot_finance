@@ -2,6 +2,7 @@ from groq import Groq
 from os import getenv
 from dotenv import load_dotenv
 import json
+import os
 
 load_dotenv()
 
@@ -40,3 +41,13 @@ def extrair_colunas(texto_usuario: str):
 
     return dados_extraidos
 
+
+def extrair_audio(filename):
+    with open (filename, 'rb') as file:
+        transcription = client.audio.transcriptions.create(
+            file=file,
+            model="whisper-large-v3-turbo",
+            response_format = "text"
+        )
+
+    return transcription
