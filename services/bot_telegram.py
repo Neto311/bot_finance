@@ -146,7 +146,59 @@ async def ver_saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         await update.message.reply_text(f"Erro: {e}")
-                
+
+async def deletar_transacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    id_transacao = update.message.text.replace('/deletar_transacao ', '').strip()
+
+    await update.message.reply_text("Deletando a transação...")
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(f'http://localhost:8000/financas/{id_transacao}')
+        
+        if response.status_code == 200:
+            mensagem_sucesso = "Transação deletada com sucesso!"
+            await update.message.reply_text(mensagem_sucesso)
+        else:
+            await update.message.reply_text("Erro ao deletar a transação")
+    except Exception as e:
+        await update.message.reply_text(f"Erro: {e}")
+
+async def atualizar_transacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    mensagem_transacao = update.message.text.replace('/atualizar_transacao ', '').strip()
+
+    partes = mensagem_transacao.split(" ", 1)
+
+    if len(partes) < 2:
+        await update.message.reply_text("Formato inválido! Use: /atualizar_transacao ID NOVO_TEXTO")
+        return 
+    
+    id_str = partes[0]
+    novo_texto = partes[1]
+
+    if not id_str.isdigit():
+        await update.message.reply_text("ID inválido! Use apenas números.")
+        return
+    
+
+    await update.message.reply_text(f"Atualizando a transação {id_str}")
+    
+    payload = {"texto": novo_texto}
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.put(f'http://localhost:8000/financas/{id_str}', json=payload)
+        
+        if response.status_code == 200:
+            dados = response.json()
+            mensagem_sucesso = formatar_mensagem(dados)
+            await update.message.reply_text(mensagem_sucesso)
+        
+        else:
+            await update.message.reply_text(f"Erro ao salvar no banco {response.status_code}: {response.text}")
+    
+    except Exception as e:
+        await update.message.reply_text(f"Erro: {e}")
 
 
 app.add_handler(CommandHandler("start", start))
@@ -155,7 +207,8 @@ app.add_handler(CommandHandler("ver_itens", ver_itens))
 app.add_handler(CommandHandler("atualizar_saldo", atualizar_saldo))
 app.add_handler(CommandHandler("ver_saldo", ver_saldo))
 app.add_handler(MessageHandler(filters.VOICE, responder_audio))
-
+app.add_handler(CommandHandler("deletar_transacao", deletar_transacao))
+app.add_handler(CommandHandler("atualizar_transacao", atualizar_transacao))
 
 
 if __name__ == '__main__':

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Path, Body
 from services.groq_client import extrair_colunas, extrair_audio
 from database import get_db
 from models.financas import Financa
@@ -151,3 +151,75 @@ def ver_saldo(
     usuario = db.query(model.Usuario).all()
 
     return usuario
+
+
+@router.delete('/financas/{id}')
+def deletar_transacao(
+    id: int,
+    db: Session = Depends(get_db)
+):
+    transacao = db.query(model.Financa).filter(model.Financa.id == id).first()
+
+    if not transacao:
+        raise HTTPException(status_code=404, detail="Transação não encontrada")
+    
+    usuario = db.query(model.Usuario).first()
+
+    if usuario and transacao.tipo.lower() == "débito":
+        usuario.saldo += transacao.valor
+    elif usuario and transacao.tipo.lower() == "crédito":
+        usuario.saldo -= transacao.valor
+
+    db.delete(transacao)
+    db.commit()
+
+    return {'mensagem': 'transacao deletada com sucesso'}
+
+
+@router.put('/financas/{id}', response_model=ResponseFinanca)
+def atualizar_transacao(
+    id: int = Path(...),
+    transacao_nova: RequestFinanca = Body(...),
+    db: Session = Depends(get_db)):
+
+    transacao = db.query(model.Financa).filter(model.Financa.id == id).first()
+
+    if not transacao:
+        raise HTTPException(status_code=404, detail="Transação não encontrada")
+    
+    usuario = db.query(model.Usuario).first()
+
+    if usuario:
+        if transacao.tipo.lower() == "débito":
+            usuario.saldo += transacao.valor
+        else:
+            usuario.saldo -= transacao.valor
+
+
+    texto = transacao_nova.texto
+
+    dados_ia = extrair_colunas(texto)
+
+    data_ia = dados_ia.get('data')
+
+    if isinstance(data_ia, str):
+        data_obj = datetime.strptime(data_ia, '%Y-%m-%d')
+    else:
+        data_obj = datetime.now()
+    
+    transacao.valor = float(dados_ia.get('valor'))
+    transacao.categoria = dados_ia.get('categoria')
+    transacao.descricao = dados_ia.get('descricao')
+    transacao.tipo = dados_ia.get('tipo') or 'Crédito'
+    transacao.data = data_obj
+
+    if usuario:
+        if transacao.tipo.lower() == "débito":
+            usuario.saldo -= transacao.valor
+        else:
+            usuario.saldo += transacao.valor
+
+    db.commit()
+    db.refresh(transacao)
+
+    return transacao
