@@ -20,6 +20,7 @@ def formatar_mensagem(dados):
     data_formatada = dados.get('data')
     return (
         f"Salvo! \n\n"
+        f"ID: {dados.get('id')}\n"
         f"Categoria: {dados.get('categoria')}\n"
         f"Valor: {dados.get('valor')}\n"
         f"Descrição: {dados.get('descricao')}\n"
@@ -200,6 +201,72 @@ async def atualizar_transacao(update: Update, context: ContextTypes.DEFAULT_TYPE
     except Exception as e:
         await update.message.reply_text(f"Erro: {e}")
 
+async def ver_transacao_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    mensagem = update.message.text.replace('/ver_transacao_data ', '').strip()
+
+    partes = mensagem.split(" ")
+
+    if len(partes) < 2:
+        await update.message.reply_text("Formato inválido! Use: /ver_transacao_data MÊS ANO")
+        return
+
+    mes = partes[0]
+    ano = partes[1]
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f'http://localhost:8000/financas/data?mes={mes}&ano={ano}')
+    
+            if response.status_code == 200:
+                dados = response.json() 
+                for dado in dados:
+                    data = (
+                        f"ID: {dado["id"]}"
+                        f"Valor: {dado["valor"]}"
+                        f"Categoria: {dado["categoria"]}"
+                        f"Descrição: {dado["descricao"]}"
+                        f"Tipo: {dado["tipo"]}"
+                        f"Data: {dado["data"]}"
+                    )
+                    await update.message.reply_text(data)
+            else:
+                await update.message.reply_text(f"Erro da API: {response.text}")
+    except Exception as e:
+        await update.message.reply_text(f"Erro: {e}")
+
+async def resumo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    mensagem = update.message.text.replace('/resumo ', '').strip()
+
+    partes = mensagem.split(" ")
+
+    if len(partes) < 2:
+        await update.message.reply_text("Formato inválido! Use: /resumo MÊS ANO")
+        return
+
+    mes = partes[0]
+    ano = partes[1]
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f'http://localhost:8000/resumo?mes={mes}&ano={ano}')
+
+            if response.status_code == 200:
+                dados = response.json()
+
+                texto = f'*Resumo de {dados['mes']}/{dados['ano']}*\n\n'
+                texto += f'Gasto total: {dados['gasto_total']:.2f}\n\n'
+                texto += "*Por categoria:*\n"
+
+                for categoria, valor in dados['categorias'].items():
+                    texto += f'- {categoria}: R${valor:.2f}\n'
+
+                await update.message.reply_text(texto, parse_mode='Markdown')
+            else: 
+                await update.message.reply_text(f"Erro da API: {response.text}")
+    except Exception as e:
+        await update.message.reply_text(f"Erro: {e}")
+
+
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), responder))
@@ -209,6 +276,9 @@ app.add_handler(CommandHandler("ver_saldo", ver_saldo))
 app.add_handler(MessageHandler(filters.VOICE, responder_audio))
 app.add_handler(CommandHandler("deletar_transacao", deletar_transacao))
 app.add_handler(CommandHandler("atualizar_transacao", atualizar_transacao))
+app.add_handler(CommandHandler("ver_transacao_data", ver_transacao_data))
+app.add_handler(CommandHandler("resumo", resumo))
+
 
 
 if __name__ == '__main__':

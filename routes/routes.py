@@ -8,6 +8,7 @@ from schemas.financas import ResponseFinanca, RequestFinanca, Usuario
 from models import financas as model
 from datetime import datetime 
 import os
+from sqlalchemy import select, extract
 
 
 
@@ -223,3 +224,52 @@ def atualizar_transacao(
     db.refresh(transacao)
 
     return transacao
+
+
+
+@router.get('/financas/data')
+def ver_transacao_data(
+    mes: int,
+    ano: int,
+    db: Session = Depends(get_db)
+):
+    dados = db.query(model.Financa).filter(
+        extract('month', model.Financa.data) == mes,
+        extract('year', model.Financa.data) == ano
+    ).all()
+
+    return dados
+
+
+@router.get('/resumo')
+def resumo(
+    mes: int,
+    ano: int,
+    db: Session = Depends(get_db)):
+
+    dados = db.query(model.Financa).filter(
+        extract('month', model.Financa.data) == mes,
+        extract('year', model.Financa.data) == ano
+    ).all()
+
+    gasto_total = 0
+
+    categorias = {}
+
+    for i in dados:
+        gasto_total += i.valor
+
+        if i.categoria not in categorias:
+            categorias[i.categoria] = i.valor
+        else:
+            categorias[i.categoria] += i.valor
+
+    
+    return {
+        "mes": mes,
+        "ano": ano,
+        "gasto_total": gasto_total,
+        "categorias": categorias
+    }
+
+    
