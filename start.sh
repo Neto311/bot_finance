@@ -1,7 +1,7 @@
-export PORT=${PORT:-10000}
+export PORT=${PORT:-8080}
 
 echo "Iniciando API na porta $PORT..."
-uvicorn main:app --host 0.0.0.0 --port $P0RT > api.log 2>&1 &
+nohup uvicorn main:app --host 0.0.0.0 --port $P0RT > api.log 2>&1 &
 
 echo "Aguardando API estabilizar..."
 sleep 60
