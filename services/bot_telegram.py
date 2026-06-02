@@ -345,8 +345,22 @@ app.add_handler(CommandHandler("resumo", resumo))
 
 
 if __name__ == '__main__':
-    print("🤖 Iniciando Bot do Telegram...")
-    app.run_polling(drop_pending_updates=True)
+    import asyncio
+    
+    async def run_bot():
+        # NUCLEAR FIX: Força o Telegram a derrubar qualquer sessão antiga
+        print("🔧 Limpando sessões antigas...")
+        async with httpx.AsyncClient() as client:
+            try:
+                await client.get(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/logOut")
+            except Exception:
+                pass
+        
+        print("🤖 Iniciando Bot do Telegram...")
+        await app.run_polling(drop_pending_updates=True)
+
+    # Inicia o loop de eventos de forma limpa
+    asyncio.run(run_bot())
 
 
 
