@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup, ForceReply
 from telegram.ext import (
     ApplicationBuilder, CommandHandler,
     MessageHandler, filters, ContextTypes
@@ -13,8 +13,13 @@ load_dotenv()
 TOKEN_TELEGRAM = getenv("TELEGRAM")
 
 
+async def post_init(application):
+    await application.bot.set_my_commands(
+        [("start", "🏠 Iniciar e ver menu")])
+    
 
-app = ApplicationBuilder().token(TOKEN_TELEGRAM).build()
+app = ApplicationBuilder().token(TOKEN_TELEGRAM).post_init(post_init).build()
+            
 
 def formatar_mensagem(dados):
     data_formatada = dados.get('data')
@@ -31,10 +36,67 @@ def formatar_mensagem(dados):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Olá, pode enviar a mensagem')
+    teclado = [
+        ['📋 Ver Gastos', '💰 Consultar Saldo'],
+        ['📊 Gerar Resumo', '🔍 Buscar por Data'],
+        ['🗑️ Deletar Item', '✏️ Editar Item', '💵 Novo Saldo']
+        ]
+
+    markup = ReplyKeyboardMarkup(teclado, resize_keyboard=True, one_time_keyboard=False)
+
+    await update.message.reply_text(
+        'Olá! Escolha uma opção rápida ou envie um áudio/texto para anotar um gasto:',
+        reply_markup=markup
+    )
 
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensagem = update.message.text
+
+    if mensagem == '🗑️ Deletar Item':
+        return await update.message.reply_text(
+            'Qual o ID da transação que deseja DELETAR?',
+            reply_markup=ForceReply(selective=True))
+    
+    if mensagem == '✏️ Editar Item':
+        return await update.message.reply_text(
+            'Qual o ID da transação que deseja EDITAR e o seu TEXTO? (Ex: 12 pizza 50 reais)',
+            reply_markup=ForceReply(selective=True))
+    
+    if mensagem == '💵 Novo Saldo':
+        return await update.message.reply_text(
+            'Qual o NOVO SALDO?',
+            reply_markup=ForceReply(selective=True))
+
+
+    if mensagem == '📊 Gerar Resumo':
+        return await update.message.reply_text(
+            'Por favor, digite o MÊS e o ANO para o RESUMO(Ex: 05 2024)',
+            reply_markup=ForceReply(selective=True))
+    
+    if mensagem == '🔍 Buscar por Data':
+      return await update.message.reply_text(
+            'Por favor, digite o MÊS e o ANO para a BUSCA(Ex: 05 2024)',
+            reply_markup=ForceReply(selective=True))
+    if mensagem == '📋 Ver Gastos':
+        return await ver_itens(update, context)
+    elif mensagem == '💰 Consultar Saldo':
+        return await ver_saldo(update, context)
+    
+    if update.message.reply_to_message:
+        pergunta = update.message.reply_to_message.text
+        if 'MÊS e o ANO' in pergunta:
+            if "RESUMO" in pergunta:
+                return await resumo(update, context)
+            elif "BUSCA" in pergunta:
+                return await ver_transacao_data(update, context)
+        if 'DELETAR' in pergunta:
+            return await deletar_transacao(update, context)
+        if 'EDITAR' in pergunta:
+            return await atualizar_transacao(update, context)
+        if 'NOVO SALDO' in pergunta:
+            return await atualizar_saldo(update, context)
+
+
 
     await update.message.reply_text("Processando os dados financeiros...")
 
