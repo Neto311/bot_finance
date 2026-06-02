@@ -1,26 +1,13 @@
 #!/bin/bash
-# deploy_railway.sh - Versão Estabilizada
+# deploy_railway.sh - Versão Cirúrgica Final
 export PORT=${PORT:-8080}
 
 echo "1. Iniciando API..."
 uvicorn main:app --host 0.0.0.0 --port $PORT &
 
-echo "2. Aguardando API estabilizar..."
-# Espera a porta abrir
-python3 -c "
-import socket, time
-for i in range(30):
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect(('127.0.0.1', $PORT))
-            break
-    except:
-        time.sleep(1)
-"
+echo "2. Aguardando 60 segundos para o Railway estabilizar e desligar o bot antigo..."
+# Aumentamos para 60s para garantir que a versão velha morra antes da nova tentar o token
+sleep 60
 
-echo "3. API Online. Aguardando 30s para evitar conflito de Bot..."
-# Esse tempo maior garante que o Railway mate o bot antigo antes do novo tentar ligar
-sleep 30
-
-echo "4. Iniciando Bot..."
+echo "3. Iniciando Bot..."
 python3 services/bot_telegram.py
