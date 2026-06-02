@@ -12,6 +12,7 @@ load_dotenv()
 
 TOKEN_TELEGRAM = getenv("TELEGRAM")
 
+API_URL = getenv("API_URL", "http://0.0.0.0:10000")
 
 async def post_init(application):
     await application.bot.set_my_commands(
@@ -104,7 +105,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post('http://localhost:8000/financas', json=payload)
+            response = await client.post(f'{API_URL}/financas', json=payload)
         
         if response.status_code == 200:
             dados = response.json()
@@ -127,7 +128,7 @@ async def responder_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with open (caminho, 'rb') as f:
         files ={'file': (caminho, f)}
         async with httpx.AsyncClient() as client:
-            response = await client.post('http://localhost:8000/financas/audio', files=files)
+            response = await client.post(f'{API_URL}/financas/audio', files=files)
     
     if os.path.exists(caminho):
         os.remove(caminho)
@@ -145,7 +146,7 @@ async def responder_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ver_itens(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get('http://localhost:8000/financas')
+            response = await client.get(f'{API_URL}/financas')
 
         if response.status_code == 200:
             dados = response.json()
@@ -174,7 +175,7 @@ async def atualizar_saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.put('http://localhost:8000/saldo', json={"saldo": float(novo_saldo)})
+            response = await client.put(f'{API_URL}/saldo', json={"saldo": float(novo_saldo)})
         
         if response.status_code == 200:
             saldo = response.json()
@@ -195,7 +196,7 @@ async def atualizar_saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ver_saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get('http://localhost:8000/saldo')
+            response = await client.get(f'{API_URL}/saldo')
 
         if response.status_code == 200:
             dados = response.json()
@@ -217,7 +218,7 @@ async def deletar_transacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.delete(f'http://localhost:8000/financas/{id_transacao}')
+            response = await client.delete(f'{API_URL}/financas/{id_transacao}')
         
         if response.status_code == 200:
             mensagem_sucesso = "Transação deletada com sucesso!"
@@ -250,7 +251,7 @@ async def atualizar_transacao(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.put(f'http://localhost:8000/financas/{id_str}', json=payload)
+            response = await client.put(f'{API_URL}/financas/{id_str}', json=payload)
         
         if response.status_code == 200:
             dados = response.json()
@@ -277,7 +278,7 @@ async def ver_transacao_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(f'http://localhost:8000/financas/data?mes={mes}&ano={ano}')
+            response = await client.get(f'{API_URL}/financas/data?mes={mes}&ano={ano}')
     
             if response.status_code == 200:
                 dados = response.json() 
@@ -310,7 +311,7 @@ async def resumo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(f'http://localhost:8000/resumo?mes={mes}&ano={ano}')
+            response = await client.get(f'{API_URL}/resumo?mes={mes}&ano={ano}')
 
             if response.status_code == 200:
                 dados = response.json()
