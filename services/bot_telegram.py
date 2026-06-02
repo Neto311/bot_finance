@@ -345,36 +345,9 @@ app.add_handler(CommandHandler("resumo", resumo))
 
 
 if __name__ == '__main__':
-    import asyncio
-    import time
-    from telegram.error import Conflict
-
-    async def run_bot():
-        while True:
-            try:
-                # 🔧 Limpeza de sessão antes de tentar ligar
-                print("🔧 Tentando conectar ao Telegram...")
-                async with httpx.AsyncClient() as client:
-                    try:
-                        await client.get(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/logOut", timeout=10)
-                    except:
-                        pass
-                
-                print("🤖 Iniciando Polling...")
-                await app.run_polling(drop_pending_updates=True)
-                break # Se rodar normal e parar por comando, sai do loop
-            
-            except Conflict:
-                print("⚠️ Conflito detectado! Outra instância ainda está viva. Aguardando 10s...")
-                await asyncio.sleep(10)
-            except Exception as e:
-                print(f"❌ Erro inesperado: {e}. Reiniciando em 10s...")
-                await asyncio.sleep(10)
-
-    try:
-        asyncio.run(run_bot())
-    except KeyboardInterrupt:
-        print("Bot desligado pelo usuário.")
+    print("🤖 Iniciando Bot do Telegram...")
+    # O drop_pending_updates=True é a forma oficial de resolver conflitos no início
+    app.run_polling(drop_pending_updates=True)
 
 
 
