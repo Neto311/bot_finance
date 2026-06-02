@@ -345,6 +345,7 @@ app.add_handler(CommandHandler("resumo", resumo))
 
 
 if __name__ == '__main__':
+    print("🤖 Iniciando Bot do Telegram...")
     app.run_polling(drop_pending_updates=True)
 
 
