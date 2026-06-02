@@ -13,3 +13,4 @@ done
 
 echo "3. API online. Iniciando Bot Telegram..."
 python3 services/bot_telegram.py
+ 
