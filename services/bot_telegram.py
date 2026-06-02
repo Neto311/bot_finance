@@ -346,21 +346,35 @@ app.add_handler(CommandHandler("resumo", resumo))
 
 if __name__ == '__main__':
     import asyncio
-    
-    async def run_bot():
-        # NUCLEAR FIX: Força o Telegram a derrubar qualquer sessão antiga
-        print("🔧 Limpando sessões antigas...")
-        async with httpx.AsyncClient() as client:
-            try:
-                await client.get(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/logOut")
-            except Exception:
-                pass
-        
-        print("🤖 Iniciando Bot do Telegram...")
-        await app.run_polling(drop_pending_updates=True)
+    import time
+    from telegram.error import Conflict
 
-    # Inicia o loop de eventos de forma limpa
-    asyncio.run(run_bot())
+    async def run_bot():
+        while True:
+            try:
+                # 🔧 Limpeza de sessão antes de tentar ligar
+                print("🔧 Tentando conectar ao Telegram...")
+                async with httpx.AsyncClient() as client:
+                    try:
+                        await client.get(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/logOut", timeout=10)
+                    except:
+                        pass
+                
+                print("🤖 Iniciando Polling...")
+                await app.run_polling(drop_pending_updates=True)
+                break # Se rodar normal e parar por comando, sai do loop
+            
+            except Conflict:
+                print("⚠️ Conflito detectado! Outra instância ainda está viva. Aguardando 10s...")
+                await asyncio.sleep(10)
+            except Exception as e:
+                print(f"❌ Erro inesperado: {e}. Reiniciando em 10s...")
+                await asyncio.sleep(10)
+
+    try:
+        asyncio.run(run_bot())
+    except KeyboardInterrupt:
+        print("Bot desligado pelo usuário.")
 
 
 
