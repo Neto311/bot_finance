@@ -345,22 +345,8 @@ app.add_handler(CommandHandler("resumo", resumo))
 
 
 if __name__ == '__main__':
-    import time
-    from telegram.error import Conflict
-
     print("🤖 Iniciando Bot do Telegram...")
-    
-    while True:
-        try:
-            # O drop_pending_updates=True limpa mensagens antigas
-            app.run_polling(drop_pending_updates=True)
-            break # Sai do loop se o bot for desligado normalmente
-        except Conflict:
-            print("⚠️ Conflito de Token! A versão antiga ainda está ativa. Aguardando 30s...")
-            time.sleep(30)
-        except Exception as e:
-            print(f"❌ Erro inesperado: {e}. Tentando novamente em 10s...")
-            time.sleep(10)
+    app.run_polling(drop_pending_updates=True)
 
 
 
