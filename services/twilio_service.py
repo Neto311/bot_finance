@@ -81,7 +81,7 @@ async def baixar_audio(url_audio: str):
 
     caminho_local = "temp_whatsapp_audio.ogg"
 
-    async with httpx.AsyncClient(auth=(sid, token)) as client:
+    async with httpx.AsyncClient(auth=(sid, token), follow_redirects=True) as client:
         response = await client.get(url_audio)
 
         if response.status_code == 200:
