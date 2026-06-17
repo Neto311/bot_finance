@@ -8,7 +8,7 @@ import httpx
 load_dotenv()
 API_URL = getenv('API_URL')
 
-router = APIRouter()
+router_wpp = APIRouter()
 
 
 def formatar_mensagem(dados):
@@ -24,29 +24,42 @@ def formatar_mensagem(dados):
         
     )
 
-@router.post('/whatsapp')
-async def responder(request: Request):
+@router_wpp.post('/whatsapp')
+async def responder_whatsapp(request: Request):
     dados_da_twilio = await request.form()
-    mensagem_cliente = dados_da_twilio.get('Body')
+    mensagem_cliente = dados_da_twilio.get('Body', "").strip()
+    comando = mensagem_cliente.lower()
 
-    payload = {"texto": mensagem_cliente}
-
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(f'{API_URL}/financas', json=payload)
-
-        
-        if response.status_code == 200:
-            dados = response.json()
-
-            txt = F"Salvo: {formatar_mensagem(dados)}"
-        else:
-            txt = "Erro ao salvar no banco"
-        
-    except Exception as e:
-        txt = f"Erro: {e}"
+    if not mensagem_cliente:
+        return Response(content="<Response></Response>", media_type="application/xml")
     
-    twilio_resp = MessagingResponse()
-    twilio_resp.message(txt)
+    async with httpx.AsyncClient() as client:
+        if comando == 'listar':
+            response = await client.get(f'{API_URL}/financas')
+            if response.status_code == 200:
+                dados = response.json()
+                txt_lista = "*Suas transações*\n\n"
 
-    return Response(content=str(twilio_resp), media_type = 'application/xml')
+                for i in dados:
+                    txt_lista += f"ID: {i['id']} | R$ {i['valor']:.2f} - {i['descricao']}\n"
+                
+                twilio_resp = MessagingResponse()
+                twilio_resp.message(txt_lista)
+                return Response(content=str(twilio_resp), media_type="application/xml")
+        try:
+            payload = {"texto": mensagem_cliente}
+            response = await client.post(f'{API_URL}/financas', json=payload)
+            
+            if response.status_code == 200:
+                dados = response.json()
+                txt = F"Salvo: {formatar_mensagem(dados)}"
+            else:
+                txt = "Erro ao salvar no banco"
+            
+        except Exception as e:
+            txt = f"Erro: {e}"
+        
+        twilio_resp = MessagingResponse()
+        twilio_resp.message(txt)
+
+        return Response(content=str(twilio_resp), media_type = 'application/xml')
