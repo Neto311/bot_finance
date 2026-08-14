@@ -1,11 +1,13 @@
 from fastapi import APIRouter
 from fastapi.responses import RedirectResponse
 from services.minhas_economias_oauth import gerar_dados_oauth
+from integrations.minhaseconomias.client import extrair_evento_sse, chamar_ferramenta_mcp, extrair_dados_resultado_mcp
 from urllib.parse import urlencode
 from os import getenv
 from dotenv import load_dotenv
 import httpx
 import json
+from datetime import datetime, date
 
 load_dotenv()
 CLIENT_ID = getenv("MINHAS_ECONOMIAS_CLIENT_ID")
@@ -151,38 +153,262 @@ async def mcp():
 
         response_ferramentas = await client.post('https://mcp.minhaseconomias.com.br/mcp', headers=headers, json=mensagem_ferramentas)
 
-        texto_sse = response_ferramentas.text
+        evento = extrair_evento_sse(response_ferramentas.text)
 
-        evento = None
-
-        for linha in texto_sse.splitlines():
-            if linha.startswith('data:'):
-                conteudo_json = linha.removeprefix('data:').strip()
-                evento = json.loads(conteudo_json)
-                break
-
-        if evento is None:
-            return{'erro': 'nenhum evento mcp encontrado'}
+        if not evento:
+            return {'erro': 'mcp não retornou'}
 
         resultado = evento.get('result', {})
         ferramentas = resultado.get('tools', [])
 
-        nomes = []
+        nomes = [ferramenta.get('name') for ferramenta in ferramentas]
+        me_= [nome for nome in nomes if nome and nome.startswith("ME_")]
+
+        #chamada get
+
+        evento_categoria = await chamar_ferramenta_mcp (3, 'ME_CategoriasDeTransacao', {'typeTransaction': 'GASTO'}, headers, client)
+
+        if not evento_categoria:
+            return {'erro': 'cliente mcp não enviou resposta'}
+
+        if evento_categoria.get('erro'):
+            return evento_categoria
+
+        resultado_categoria = evento_categoria.get('result', {})
+        conteudos_categorias = resultado_categoria.get('content', [])
+
+        if not conteudos_categorias:
+            return {'erro': 'conteúdo ausente'}
+
+        primeiro_bloco = conteudos_categorias[0]
+
+        texto_categorias = primeiro_bloco.get('text')
+    
+
+        try:
+            dados_categorias = json.loads(texto_categorias)
+        except json.JSONDecodeError:
+            return {'error': 'Resultado da ferramenta de categorias não é JSON válido'}
+
+    
+        if not dados_categorias:
+            primeiro_item = None
+            chaves_primeiro_item = []
+        else:
+            primeiro_item = dados_categorias[0]
+
+            if isinstance(primeiro_item, dict):
+                chaves_primeiro_item = list(primeiro_item.keys())
+            else:
+                chaves_primeiro_item = []
+
+        categorias_resumidas = []
+
+        transporte = None
+
+        for categoria in dados_categorias:
+            if not isinstance(categoria, dict):
+                continue
+            categorias_resumidas.append(
+                {
+                    'nome': categoria.get('categoryName'),
+                    'referencia': categoria.get('categoryRef'),
+                    'isInternal': categoria.get('isInternal'),
+                    'qtd_subcategorias': len(categoria.get('subCategories') or [])
+
+                }
+            )
+
+            if categoria.get('categoryName') == 'Transporte':
+                transporte = categoria
+                break
+
+        if not transporte:
+            return {'erro': 'Categoria Transporte não encontrada'}
+
+        subcategorias = transporte.get('subCategories') or []
+
+        primeira_subcategoria = (
+            subcategorias[0]
+            if subcategorias
+            else None
+        )
+
+        if isinstance (primeira_subcategoria, dict):
+            chaves_subcategoria = list(primeira_subcategoria.keys())
+        else:
+            chaves_subcategoria = []
+
+
+        subcategorias_resumidas = []
+
+        combustivel = None
+
+        for subcategoria in subcategorias:
+            if not isinstance(subcategoria, dict):
+                continue
+            subcategorias_resumidas.append({
+                'nome': subcategoria.get('subCategoryName'),
+                'referencia': subcategoria.get('subCategoryRef'),
+                'referencia_categoria': subcategoria.get('categoryRef'),
+                'editavel': subcategoria.get('isEditable')
+            })
+
+            if subcategoria.get('subCategoryName') == 'Combustível':
+                combustivel = subcategoria
+                break
+
+
+
+        evento_saldo = await chamar_ferramenta_mcp(4, 'ME_Saldo', {}, headers, client)
+
+        if not evento_saldo:
+            return {'erro': 'evento_saldo vazio'}
+        
+        if evento_saldo.get('erro'):
+            return evento_saldo
+        
+        dados_saldo = extrair_dados_resultado_mcp(evento_saldo)
+
+        if dados_saldo.get('erro'):
+            return dados_saldo
+
+        bancos = dados_saldo.get('banks') or []
+
+        if isinstance(bancos, list) and bancos:
+            primeiro_banco = bancos[0]
+        else:
+            primeiro_banco = None
+
+        if isinstance(primeiro_banco, dict):
+            chaves_primeiro_banco = list(primeiro_banco.keys())
+        else:
+            chaves_primeiro_banco = []
+
+
+        contas_resumidas = []
+
+        conta_principal = None
+        conta_destino = None
+
+        for conta in bancos:
+            if not isinstance(conta, dict):
+                continue
+            contas_resumidas.append({
+                'nome': conta.get('accountName'),
+                'referencia': conta.get('accountRef'),
+                'tipo': conta.get('accountType'),
+                'descricao_tipo': conta.get('accountTypeDescription'),
+                'instituicao': conta.get('financialInstitutionName'),
+                'principal': conta.get('main'),
+                'arquivada': conta.get('archived')
+                }
+            )
+
+            if conta.get('main') and not conta.get('archived'):
+                conta_principal = conta
+
+            if conta.get('accountName') == 'Nubank' and not conta.get('archived'):
+                conta_destino = conta
+
+
+        
+
+        evento_transacoes = await chamar_ferramenta_mcp(5, 'ME_Transacoes', {
+            'types': ['GASTO'],
+            'statuses': ['CONFIRMED', 'PENDING'],
+            'size': 10,
+            'sortDirection': 'DESC'
+        }, headers, client)
+
+        if not evento_transacoes:
+                    return {'erro': 'evento_transacoes vazio'}
+        if evento_transacoes.get('erro'):
+            return evento_transacoes
+
+        resultado_transacoes = evento_transacoes.get('result', {})
+        conteudos_transacoes = resultado_transacoes.get('content', [])
+
+
+        if not conteudos_transacoes:
+            return {'erro': 'Conteúdo de transacoes ausente'}
+
+        primeiro_bloco_transacao = conteudos_transacoes[0]
+
+        texto_transacao = primeiro_bloco_transacao.get('text')
+
+        try:
+            dados_transacao = json.loads(texto_transacao)
+        except json.JSONDecodeError:
+            return {'erro': 'json vazio'}
+        
+        if not isinstance(dados_transacao, dict):
+            return {
+                "erro": "Formato inesperado",
+                "tipo": type(dados_transacao).__name__,
+            }
+
+        transacoes = dados_transacao.get('transactions') or []
+
+        if transacoes:
+            primeira_transacao = transacoes[0]
+        else:
+            primeira_transacao = []
+
+        if isinstance(primeira_transacao, dict):
+            chaves_transacao = list(primeira_transacao.keys())
+
+
+        ferramentas_criar = None
 
         for ferramenta in ferramentas:
-            nomes.append(ferramenta.get('name'))
+            if isinstance(ferramenta, dict) and ferramenta.get('name') == 'ME_CriarTransacao':
+                ferramentas_criar = ferramenta
+                break
 
-        for nome in nomes:
-            if
+        if not ferramentas_criar:
+            return {'erro': 'ferramentas_criar vazio'}
+
+        input_schema = ferramentas_criar.get('inputSchema') or {}
+        propriedades = input_schema.get('properties') or {}
+        obrigatorios = input_schema.get('required') or []
+
+        categoria_ref_presente = False
+
+        if transporte:
+            categoria_ref_presente = True if transporte.get('categoryRef') else False
+
+        
+        sub_categoria_ref_presente = False
+
+        if combustivel:
+            sub_categoria_ref_presente = True if combustivel.get('subCategoryRef') else False
+
+
+        conta_ref_presente = False
+
+        if conta_principal:
+            conta_ref_presente = True if conta_principal.get('accountRef') else False
+
+        if not conta_destino:
+            return {'erro': 'Conta Nubank não encontrada'}
+
+        argumentos = {
+            'categoryRef': transporte.get('categoryRef'),
+            'subCategoryRef': combustivel.get('subCategoryRef'),
+            'accountRef': conta_destino.get('accountRef'),
+            'dateTransaction': date.today().strftime('%Y-%m-%d'),
+            'description': 'TESTE BOT MCP - EXCLUIR',
+            'typeTransaction': 'GASTO',
+            'value': 0.01,
+            'isConsolidated': True
+        }
 
 
 
     return {
-        "http_status": response.status_code,
-        "notificacao_http_status": response_notificacao.status_code,
-        "content_type": response.headers.get('content-type'),
-        "sessao_recebida": bool(response.headers.get('mcp-session-id')),
-
-        "ferramentas_http_status": response_ferramentas.status_code,
-        "ferramentas_content_type": response_ferramentas.headers.get('content-type') 
-    }
+       'conta_destino': bool(conta_destino),
+       'nome_conta': conta_destino.get('accountName'),
+       'ref': bool(conta_destino.get('accountRef')),
+       'arquivada': conta_destino.get('archived')
+        }

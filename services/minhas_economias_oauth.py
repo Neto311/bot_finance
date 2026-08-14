@@ -1,6 +1,7 @@
 import secrets
 import hashlib
 import base64
+import json
 
 def gerar_dados_oauth():
     code_verifier = secrets.token_urlsafe(64)
