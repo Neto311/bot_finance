@@ -1,13 +1,14 @@
 from fastapi import APIRouter
 from fastapi.responses import RedirectResponse
 from services.minhas_economias_oauth import gerar_dados_oauth
-from integrations.minhaseconomias.client import extrair_evento_sse, chamar_ferramenta_mcp, extrair_dados_resultado_mcp
+from integrations.minhaseconomias.client import extrair_evento_sse, chamar_ferramenta_mcp, extrair_dados_resultado_mcp, inicializar_sessao_mcp
 from urllib.parse import urlencode
 from os import getenv
 from dotenv import load_dotenv
 import httpx
 import json
 from datetime import datetime, date
+from providers.minhas_economias_provider import MinhasEconomiasProvider
 
 load_dotenv()
 CLIENT_ID = getenv("MINHAS_ECONOMIAS_CLIENT_ID")
@@ -111,38 +112,16 @@ async def mcp():
         'Accept': "application/json, text/event-stream"
     }
 
-    mensagem ={
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2025-06-18",
-            "capabilities": {},
-            "clientInfo": {
-                "name": "bot-finance",
-                "version": "0.1.0"
-            }
-        }
-    }
-
     async with httpx.AsyncClient() as client:
-        response = await client.post("https://mcp.minhaseconomias.com.br/mcp", headers=headers, json=mensagem)
+        resultado_sessao = await inicializar_sessao_mcp(client, headers)
 
-        session_id = response.headers.get('mcp-session-id')
+        if resultado_sessao.get('erro'):
+            return resultado_sessao
 
-        if not session_id:
-            return {'error': 'servidor não criou sessão mcp'}
-        tokens_oauth['usuario_local']['mcp_session_id'] = session_id
+        headers_sessao = resultado_sessao.get('headers_sessao')
 
-        notificacao = {
-            "jsonrpc": "2.0",
-            "method": "notifications/initialized",
-            "params": {}
-        }
-
-        headers['Mcp-Session-Id'] = session_id
-
-        response_notificacao = await client.post("https://mcp.minhaseconomias.com.br/mcp", headers=headers, json=notificacao)
+        if not headers_sessao:
+            return{'erro': 'sem headers da sessão'}
 
         mensagem_ferramentas = {
             'jsonrpc': "2.0",
@@ -151,7 +130,7 @@ async def mcp():
             'params': {}
         }
 
-        response_ferramentas = await client.post('https://mcp.minhaseconomias.com.br/mcp', headers=headers, json=mensagem_ferramentas)
+        response_ferramentas = await client.post('https://mcp.minhaseconomias.com.br/mcp', headers=headers_sessao, json=mensagem_ferramentas)
 
         evento = extrair_evento_sse(response_ferramentas.text)
 
@@ -166,7 +145,7 @@ async def mcp():
 
         #chamada get
 
-        evento_categoria = await chamar_ferramenta_mcp (3, 'ME_CategoriasDeTransacao', {'typeTransaction': 'GASTO'}, headers, client)
+        evento_categoria = await chamar_ferramenta_mcp (3, 'ME_CategoriasDeTransacao', {'typeTransaction': 'GASTO'}, headers_sessao, client)
 
         if not evento_categoria:
             return {'erro': 'cliente mcp não enviou resposta'}
@@ -174,22 +153,10 @@ async def mcp():
         if evento_categoria.get('erro'):
             return evento_categoria
 
-        resultado_categoria = evento_categoria.get('result', {})
-        conteudos_categorias = resultado_categoria.get('content', [])
+        dados_categorias = extrair_dados_resultado_mcp(evento_categoria)
 
-        if not conteudos_categorias:
-            return {'erro': 'conteúdo ausente'}
-
-        primeiro_bloco = conteudos_categorias[0]
-
-        texto_categorias = primeiro_bloco.get('text')
-    
-
-        try:
-            dados_categorias = json.loads(texto_categorias)
-        except json.JSONDecodeError:
-            return {'error': 'Resultado da ferramenta de categorias não é JSON válido'}
-
+        if isinstance(dados_categorias, dict) and dados_categorias.get('erro'):
+            return dados_categorias
     
         if not dados_categorias:
             primeiro_item = None
@@ -260,7 +227,7 @@ async def mcp():
 
 
 
-        evento_saldo = await chamar_ferramenta_mcp(4, 'ME_Saldo', {}, headers, client)
+        evento_saldo = await chamar_ferramenta_mcp(4, 'ME_Saldo', {}, headers_sessao, client)
 
         if not evento_saldo:
             return {'erro': 'evento_saldo vazio'}
@@ -319,28 +286,17 @@ async def mcp():
             'statuses': ['CONFIRMED', 'PENDING'],
             'size': 10,
             'sortDirection': 'DESC'
-        }, headers, client)
+        }, headers_sessao, client)
 
         if not evento_transacoes:
                     return {'erro': 'evento_transacoes vazio'}
         if evento_transacoes.get('erro'):
             return evento_transacoes
 
-        resultado_transacoes = evento_transacoes.get('result', {})
-        conteudos_transacoes = resultado_transacoes.get('content', [])
+        dados_transacao = extrair_dados_resultado_mcp(evento_transacoes)
 
-
-        if not conteudos_transacoes:
-            return {'erro': 'Conteúdo de transacoes ausente'}
-
-        primeiro_bloco_transacao = conteudos_transacoes[0]
-
-        texto_transacao = primeiro_bloco_transacao.get('text')
-
-        try:
-            dados_transacao = json.loads(texto_transacao)
-        except json.JSONDecodeError:
-            return {'erro': 'json vazio'}
+        if isinstance(dados_transacao, dict) and dados_transacao.get('erro'):
+            return dados_transacao
         
         if not isinstance(dados_transacao, dict):
             return {
@@ -412,3 +368,39 @@ async def mcp():
        'ref': bool(conta_destino.get('accountRef')),
        'arquivada': conta_destino.get('archived')
         }
+
+
+@me_router.get ('/integracoes/minhas-economias/testar-provider')
+async def testar_provider():
+    tokens = tokens_oauth.get('usuario_local')
+
+    if not tokens:
+        return {'conectar': False}
+
+    access_token = tokens.get('access_token')
+    token_type = tokens.get('token_type')
+
+    provedor = MinhasEconomiasProvider(access_token, token_type)
+
+    filtros = {
+        'types': ['GASTO'],
+        'statuses':['CONFIRMED, PENDING'],
+        'size': 10,
+        'sortDirection': 'DESC'
+    }
+
+    dados = await provedor.listar_transacoes(filtros)
+
+    if isinstance(dados, dict) and dados.get('erro'):
+        return dados
+
+    transacoes = dados.get('transactions') or []
+
+    return{
+        'provider_funcionando': bool(provedor),
+        'tipo_resultado': type(dados).__name__,
+        'chaves_resultados': list(dados.keys()),
+        'qtd_transacoes': len(transacoes),
+        'has_More': bool(dados.get('hasMore')),
+        'next_cursor_presente': bool(dados.get('nextCursor'))
+    }

@@ -69,3 +69,50 @@ def extrair_dados_resultado_mcp(evento):
     return dados 
     
 
+async def inicializar_sessao_mcp(client, headers):
+    initialize = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {},
+            "clientInfo": {
+                "name": "bot-finance",
+                "version": "0.1.0"
+            }
+        }
+    }
+
+    response = await client.post('https://mcp.minhaseconomias.com.br/mcp', headers = headers, json=initialize)
+
+    if response.status_code == 200:
+        session_id = response.headers.get('mcp-session-id')
+        
+        if not session_id:
+            return {'erro': 'servidor não criou sessão mcp'}
+            
+        
+        notificacao = {
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+            "params": {}
+        }
+
+        headers_sessao = headers.copy()
+
+        headers_sessao['Mcp-Session-Id'] = session_id
+    else:
+        return {'erro': 'falha ao inciialiar sessão MCP'}
+
+    response_notificacao = await client.post('https://mcp.minhaseconomias.com.br/mcp', headers = headers_sessao, json = notificacao)
+
+    if response_notificacao.status_code != 202:
+        return {'erro': response_notificacao.status_code}
+
+
+    return {
+        'headers_sessao': headers_sessao,
+        'session_id_presente': bool(session_id)
+    }
+
