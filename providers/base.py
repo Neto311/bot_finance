@@ -8,3 +8,15 @@ class FinanceProvider(ABC):
     @abstractmethod
     async def criar_transacao(self, dados_transacao):
         pass
+
+    @abstractmethod
+    async def listar_categorias(self, tipo_transacao):
+        pass
+
+    @abstractmethod
+    async def listar_contas(self):
+        pass
+
+    @abstractmethod
+    async def listar_cartoes(self):
+        pass

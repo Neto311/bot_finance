@@ -9,6 +9,7 @@ import httpx
 import json
 from datetime import datetime, date
 from providers.minhas_economias_provider import MinhasEconomiasProvider
+from services.finance_service import FinanceService
 
 load_dotenv()
 CLIENT_ID = getenv("MINHAS_ECONOMIAS_CLIENT_ID")
@@ -362,6 +363,7 @@ async def mcp():
 
 
 
+
     return {
        'conta_destino': bool(conta_destino),
        'nome_conta': conta_destino.get('accountName'),
@@ -382,25 +384,151 @@ async def testar_provider():
 
     provedor = MinhasEconomiasProvider(access_token, token_type)
 
+    servico = FinanceService(provedor)
+
     filtros = {
         'types': ['GASTO'],
-        'statuses':['CONFIRMED, PENDING'],
+        'statuses':['CONFIRMED', 'PENDING'],
         'size': 10,
         'sortDirection': 'DESC'
     }
 
-    dados = await provedor.listar_transacoes(filtros)
+    dados = await servico.listar_transacoes(filtros)
 
     if isinstance(dados, dict) and dados.get('erro'):
         return dados
 
     transacoes = dados.get('transactions') or []
 
+    categorias = await servico.listar_categorias('GASTO')
+
+    if isinstance(categorias, dict) and categorias.get('erro'):
+        return categorias
+
+    contas = await servico.listar_contas()
+
+    if isinstance(contas, dict) and contas.get('erro'):
+        return contas
+
+    if not isinstance(categorias, list):
+        return {'erro': 'formato inesperado de categorias'}
+
+    if not isinstance(contas, list):
+        return {'erro': 'formato inesperado de contas'}
+
+
+    nubank = False
+
+    for conta in contas:
+        if isinstance(conta, dict):
+            if conta.get('accountName') == 'Nubank' and not conta.get('archived'):
+                nubank = True
+                break
+
+    categoria_nome = await servico.buscar_categoria('Transporte', 'GASTO')
+
+    if isinstance(categoria_nome, dict) and categoria_nome.get('erro'):
+        return categoria_nome
+
+    subcategoria = await servico.buscar_subcategorias('Transporte', 'Combustível', 'GASTO')
+
+    if isinstance(subcategoria, dict) and subcategoria.get('erro'):
+        return subcategoria
+
+    conta = await servico.buscar_conta('Nubank')
+
+    if isinstance(conta, dict) and conta.get('erro'):
+        return conta
+
+    dados_teste = {
+        'valor': 80,
+        'categoria': 'Transporte',
+        'subcategoria': 'Combustível',
+        'descricao': 'Gasolina',
+        'conta': 'Nubank',
+        'tipo': 'GASTO',
+        'data': '2026-08-17'
+    }
+
+    preparacao = await servico.preparar_transacao(dados_teste)
+
+    if isinstance(preparacao, dict) and preparacao.get('erro'):
+        return preparacao
+
+    transacoes = dados.get('transactions') or []
+
+    cartao_encontrado = None
+
+    for transacao in transacoes:
+        if not isinstance(transacao, dict):
+            continue
+        cartao = transacao.get('creditCard')
+
+        if isinstance(cartao, dict) and cartao is not None:
+            cartao_encontrado = cartao
+            break
+
+    cartao = await servico.buscar_cartao('Cartão Nubank')
+
+    if isinstance(cartao, dict) and cartao.get('erro'):
+        return cartao
+
+    catalogo = await servico.montar_catalogo_categorias('GASTO')
+
+    if isinstance(catalogo, dict) and catalogo.get('erro'):
+        return catalogo
+
+    transporte_catalogo = None
+    for item in catalogo:
+        if item.get('categoria') == 'Transporte':
+            transporte_catalogo = item
+            break
+
+    if not transporte_catalogo:
+        return {'erro': 'catalogo de transporte nao encontrado'}
+
+    subcategoria_transporte = transporte_catalogo.get('subcategorias') or []
+    pedagio = 'Pedágio' in subcategoria_transporte
+
     return{
-        'provider_funcionando': bool(provedor),
-        'tipo_resultado': type(dados).__name__,
-        'chaves_resultados': list(dados.keys()),
-        'qtd_transacoes': len(transacoes),
-        'has_More': bool(dados.get('hasMore')),
-        'next_cursor_presente': bool(dados.get('nextCursor'))
+        'qtd_categorias_catalogo': len(catalogo),
+        'transporte_encontrado': bool(transporte_catalogo),
+        'qtd_sub_transporte': len(subcategoria_transporte),
+        'pedagio_disponivel': bool(pedagio)
+    }
+
+@me_router.post('/integracoes/minhas-economias/testar-criacao')
+async def testar_criacao():
+    tokens = tokens_oauth.get('usuario_local')
+
+    if not tokens:
+        return {'conectar': False}
+
+    access_token = tokens.get('access_token')
+    token_type = tokens.get('token_type')
+
+    provedor = MinhasEconomiasProvider(access_token, token_type)
+
+    servico = FinanceService(provedor)
+
+    dados_teste = {
+        'valor': 0.01,
+        'categoria': 'Transporte',
+        'subcategoria': 'Combustível',
+        'descricao': 'TESTE CARTAO MCP - EXCLUIR',
+        'tipo': 'GASTO',
+        'data': '2026-08-17'
+    }
+
+    resultado = await servico.registrar_transacao(dados_teste)
+
+    if isinstance(resultado, dict) and resultado.get('erro'):
+        return resultado
+
+    erro_presente = bool(resultado.get('erro')) if isinstance(resultado, dict) else False
+
+    return {
+        'criacao_concluida': bool(resultado),
+        'tipo_resultado': type(resultado).__name__,
+        'erro_presente': erro_presente
     }

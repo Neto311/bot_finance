@@ -48,3 +48,70 @@ class MinhasEconomiasProvider(FinanceProvider):
 
     async def criar_transacao(self, dados_transacao):
         return await self._executar_ferramenta(2, 'ME_CriarTransacao', dados_transacao)
+
+    async def listar_categorias(self, tipo_transacao):
+        return await self._executar_ferramenta(3, 'ME_CategoriasDeTransacao', {'typeTransaction': tipo_transacao})
+
+    async def listar_contas(self):
+        saldo = await self._executar_ferramenta(3, 'ME_Saldo', {})
+
+        if isinstance(saldo, dict) and saldo.get('erro'):
+            return saldo
+
+        if not isinstance(saldo, dict):
+            return {'erro': 'erro de formato'}
+        
+        return saldo.get('banks') or []
+
+    async def listar_cartoes(self):
+        filtros = {
+            'statuses': ['CONFIRMED', 'PENDING'],
+            'size': 100,
+            'sortDirection': 'DESC'
+        }
+
+        resultado = await self._executar_ferramenta(4, 'ME_Transacoes', filtros)
+
+        if not isinstance(resultado, dict):
+            return {'erro': 'formato inesperado ao listar transacoes'}
+
+        if resultado.get('erro'):
+            return resultado
+
+        transacoes = resultado.get('transactions')
+
+        if not transacoes:
+            transacoes = []
+
+        if not isinstance(transacoes, list):
+            return {'erro': 'formato inesperado das transacoes'}
+
+        cartoes = []
+        referencias_vistas = set()
+
+        for transacao in transacoes:
+            if not isinstance(transacao, dict):
+                continue
+
+            cartao = transacao.get('creditCard')
+
+            if not isinstance(cartao, dict):
+                continue
+
+            if not cartao:
+                continue
+
+            referencia = cartao.get('creditCardRef')
+
+            if not referencia:
+                continue
+
+            if referencia in referencias_vistas:
+                continue
+
+            referencias_vistas.add(referencia)
+            cartoes.append(cartao)
+
+        return cartoes
+
+    

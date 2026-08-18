@@ -3,6 +3,7 @@ from os import getenv
 from dotenv import load_dotenv
 import json
 import os
+from datetime import date
 
 load_dotenv()
 
@@ -10,29 +11,53 @@ GROQ = getenv("GROQ")
 
 client = Groq(api_key = GROQ)
 
-PROMPT = (
-    "Você é um extrator de dados. Sua resposta deve conter APENAS um JSON puro, "
-    "sem explicações. Extraia do texto: 'valor', 'categoria', 'descricao', 'tipo', 'data'."
-    "Se a data nao for mencionada, use a data de hoje (formato YYYY-MM-DD)"
-    "O tipo deverá obrigatóriamente ser Débito ou Crédito, exatamente com essa escrita"
-    "Se não encontrar algum dado, preencha como null."
-    "Os tipos podem ser débito ou crédito, caso não seja dito no texto, considera crédito"
-    "Você é um extrator de dados financeiros. Extraia: 'valor' (float), 'categoria', 'descricao' e 'data'.\n"
-    "Categorias sugeridas: Alimentação, Transporte, Lazer, Saúde, Moradia, Outros.\n"
-    "Responda APENAS o JSON puro. Se não encontrar a categoria, use 'Outros'."
-    "Você é um extrator de dados financeiros rigoroso. "
-    "Extraia EXATAMENTE o valor numérico mencionado no texto.\n"
-    "NUNCA invente valores baseados em conhecimento externo. "
-    
+PROMPT = ("""Você é um extrator de dados financeiros.
+
+Responda APENAS com um objeto JSON válido, sem Markdown e sem explicações.
+
+Extraia exatamente estes campos:
+- valor: número
+- categoria: texto
+- subcategoria: texto ou null
+- descricao: texto
+- tipo: GASTO ou GANHO
+- data: data no formato YYYY-MM-DD
+
+Regras para tipo:
+- Gastei, paguei, comprei, débito e despesa significam GASTO.
+- Recebi, ganhei, salário, depósito e receita significam GANHO.
+- Nunca use Débito ou Crédito no campo tipo.
+- O tipo deve ser somente GASTO ou GANHO.
+
+Regras de categoria:
+- Gasolina, combustível e posto: categoria Transporte e subcategoria Combustível.
+- Restaurante, lanche e refeição: categoria Alimentação.
+- Se não identificar uma subcategoria, use null.
+- Não invente categorias ou subcategorias.
+
+Regras gerais:
+- Extraia exatamente o valor mencionado.
+- Nunca invente valores.
+- Se a descrição não estiver clara, produza uma descrição curta baseada no texto.
+- Se algum dado não puder ser identificado, use null.
+
+Regras de data:
+- A data atual será informada junto da mensagem do usuário.
+- Se o usuário disser "hoje" ou não informar uma data, use a data atual informada.
+- Nunca invente outra data.
+"""
 )
 
 
 def extrair_colunas(texto_usuario: str):
+    data_atual = date.today().isoformat()
+
+    mensagem_usuario = f"Data atual: {data_atual}\n Texto do usuário: {texto_usuario}"
     completion = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="openai/gpt-oss-120b",
         messages = [
             {'role': 'system', 'content': PROMPT},
-            {'role': 'user', 'content': texto_usuario}
+            {'role': 'user', 'content': mensagem_usuario}
         ],
         response_format={ "type": "json_object" }
         )
