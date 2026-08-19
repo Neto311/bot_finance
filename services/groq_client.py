@@ -2,7 +2,6 @@ from groq import Groq
 from os import getenv
 from dotenv import load_dotenv
 import json
-import os
 from datetime import date
 
 load_dotenv()
@@ -45,14 +44,27 @@ Regras de data:
 - A data atual será informada junto da mensagem do usuário.
 - Se o usuário disser "hoje" ou não informar uma data, use a data atual informada.
 - Nunca invente outra data.
+
+Regras do catálogo:
+- Quando o catálogo tiver opções, escolha categoria e subcategoria exclusivamente nele.
+- Copie os nomes exatamente como aparecem no catálogo.
+- A subcategoria escolhida deve pertencer à categoria escolhida.
+- Se nenhuma subcategoria se encaixar, use null.
+- Quando o catálogo estiver vazio, faça a melhor classificação possível.
 """
 )
 
 
-def extrair_colunas(texto_usuario: str):
+def extrair_colunas(texto_usuario: str, catalogo_categorias=None):
+
+    catalogo = json.dumps([], ensure_ascii=False)
+
     data_atual = date.today().isoformat()
 
-    mensagem_usuario = f"Data atual: {data_atual}\n Texto do usuário: {texto_usuario}"
+    if isinstance(catalogo_categorias, list):
+        catalogo = json.dumps(catalogo_categorias, ensure_ascii=False)
+
+    mensagem_usuario = f"Data atual: {data_atual}\n Texto do usuário: {texto_usuario} \n Categorias disponíveis: {catalogo}"
     completion = client.chat.completions.create(
         model="openai/gpt-oss-120b",
         messages = [

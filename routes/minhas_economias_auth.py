@@ -10,13 +10,15 @@ import json
 from datetime import datetime, date
 from providers.minhas_economias_provider import MinhasEconomiasProvider
 from services.finance_service import FinanceService
+from services.groq_client import extrair_colunas
+from integrations.minhaseconomias.auth_store import tokens_oauth, tentativas_oauth
+from services.finance_service_factory import obter_finance_service
+from repositories.minhas_economias_token_repository import salvar_tokens, buscar_tokens
+from services.minhas_economias_token_service import renovar_token
 
 load_dotenv()
 CLIENT_ID = getenv("MINHAS_ECONOMIAS_CLIENT_ID")
 REDIRECT_URI = getenv("MINHAS_ECONOMIAS_REDIRECT_URI")
-
-tentativas_oauth = {}
-tokens_oauth = {}
 
 me_router = APIRouter()
 
@@ -42,10 +44,24 @@ async def callback(code: str, state:str ):
         if response.status_code == 200:
             dados = response.json()
 
+            campos_obrigatorios = ['access_token', 'refresh_token', 'token_type', 'expires_in']
+
+            for item in campos_obrigatorios:
+                if item not in dados:
+                    return {'erro': f'faltando o campo {item}'}
+
+            registro_salvo = salvar_tokens(
+                usuario = 'usuario_local',
+                access_token= dados.get('access_token'),
+                refresh_token= dados.get('refresh_token'),
+                token_type=dados.get('token_type'),
+                expires_in=dados.get('expires_in')
+            )
+
             tokens_oauth['usuario_local'] = {
                 'access_token': dados.get('access_token'),
                 'refresh_token': dados.get('refresh_token'),
-                'expires_in': dados.get('expires_in'),
+                'expires_at': registro_salvo.expires_at,
                 'token_type': dados.get('token_type')
 
             }
@@ -90,13 +106,19 @@ async def verificacao():
     tokens = tokens_oauth.get("usuario_local")
 
     if not tokens:
-        return {'conectado': False}
+        tokens = buscar_tokens('usuario_local')
+
+        if tokens:
+            tokens_oauth['usuario_local'] = tokens
+
+        if not tokens:
+            return {'conectado': False}
     return {
         'conectado': True,
-        'access_token_presente': bool(tokens['access_token']),
-        'refresh_token_presente': bool(tokens['refresh_token']),
-        'token_type': tokens['token_type'],
-        'expires_in': tokens['expires_in']
+        'access_token_presente': bool(tokens.get('access_token')),
+        'refresh_token_presente': bool(tokens.get('refresh_token')),
+        'token_type': tokens.get('token_type'),
+        'expires_at': tokens.get('expires_at')
     }
 
 @me_router.get('/integracoes/minhas-economias/testar-mcp')
@@ -374,17 +396,10 @@ async def mcp():
 
 @me_router.get ('/integracoes/minhas-economias/testar-provider')
 async def testar_provider():
-    tokens = tokens_oauth.get('usuario_local')
+    servico = await obter_finance_service('usuario_local')
 
-    if not tokens:
-        return {'conectar': False}
-
-    access_token = tokens.get('access_token')
-    token_type = tokens.get('token_type')
-
-    provedor = MinhasEconomiasProvider(access_token, token_type)
-
-    servico = FinanceService(provedor)
+    if isinstance(servico, dict) and servico.get('erro'):
+        return servico
 
     filtros = {
         'types': ['GASTO'],
@@ -490,11 +505,21 @@ async def testar_provider():
     subcategoria_transporte = transporte_catalogo.get('subcategorias') or []
     pedagio = 'Pedágio' in subcategoria_transporte
 
+    texto =  "Gastei 30 reais de pedágio hoje"
+
+    dados_ia_teste = extrair_colunas(texto, catalogo)
+
+    if not isinstance(dados_ia_teste, dict):
+        return {'erro': 'formato inesperado da Groq'}
+        
+
     return{
-        'qtd_categorias_catalogo': len(catalogo),
-        'transporte_encontrado': bool(transporte_catalogo),
-        'qtd_sub_transporte': len(subcategoria_transporte),
-        'pedagio_disponivel': bool(pedagio)
+        'ia_valor': dados_ia_teste.get('valor'),
+        'ia_categoria': dados_ia_teste.get('categoria'),
+        'ia_subcategoria': dados_ia_teste.get('subcategoria'),
+        'ia_descricao': dados_ia_teste.get('descricao'),
+        'ia_tipo': dados_ia_teste.get('tipo'),
+        'ia_data': dados_ia_teste.get('data')
     }
 
 @me_router.post('/integracoes/minhas-economias/testar-criacao')

@@ -11,6 +11,7 @@ ENV/
 *.db
 *.sqlite3
 financas.db
+test.db
 
 # Cache do Python
 __pycache__/

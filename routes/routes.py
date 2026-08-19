@@ -9,15 +9,44 @@ from models import financas as model
 from datetime import datetime 
 import os
 from sqlalchemy import select, extract
+from services.finance_service_factory import obter_finance_service
 
 
 
 router = APIRouter()
 
 @router.post('/financas', response_model=ResponseFinanca)
-def adicionar_dados(
+async def adicionar_dados(
     request: RequestFinanca,
     db: Session = Depends(get_db)):
+
+    servico= await obter_finance_service('usuario_local')
+
+    if isinstance(servico, dict) and servico.get('erro'):
+        raise HTTPException(status_code=503, detail=servico.get('erro'))
+
+    catalogo = await servico.montar_catalogo_categorias('GASTO')
+
+    if isinstance(catalogo, dict) and catalogo.get('erro'):
+        raise HTTPException(status_code=502, detail = catalogo.get('erro'))
+
+    texto = request.texto
+
+    dados_ia = extrair_colunas(texto, catalogo)
+
+    if not isinstance(dados_ia, dict):
+        raise HTTPException(status_code=502)
+
+    if dados_ia.get('tipo') != 'GASTO':
+        raise HTTPException(status_code=422, detail='MVP aceita somente gastos')
+
+    resultado_mcp = await servico.registrar_transacao(dados_ia)
+
+    if isinstance(resultado_mcp, dict) and resultado_mcp.get('erro'):
+        raise HTTPException(status_code=502, detail=resultado_mcp.get('erro'))
+
+    if not resultado_mcp:
+        raise HTTPException(status_code=502, detail='Minhas economias não confirmou a criação')
 
     usuario = db.query(model.Usuario).first()
 
@@ -27,9 +56,7 @@ def adicionar_dados(
         db.commit()
         db.refresh(novo_usuario)
 
-    texto = request.texto
-
-    dados_ia = extrair_colunas(texto)
+    
 
     data_ia = dados_ia.get('data')
 
