@@ -14,6 +14,8 @@ TOKEN_TELEGRAM = getenv("TELEGRAM")
 
 API_URL = getenv("API_URL", "http://0.0.0.0:10000")
 
+API_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+
 async def post_init(application):
     await application.bot.set_my_commands(
         [("start", "🏠 Iniciar e ver menu")])
@@ -104,7 +106,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     payload = {"texto": mensagem}
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
             response = await client.post(f'{API_URL}/financas', json=payload)
         
         if response.status_code == 200:
@@ -127,7 +129,7 @@ async def responder_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     with open (caminho, 'rb') as f:
         files ={'file': (caminho, f)}
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
             response = await client.post(f'{API_URL}/financas/audio', files=files)
     
     if os.path.exists(caminho):
@@ -145,18 +147,18 @@ async def responder_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
 async def ver_itens(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
             response = await client.get(f'{API_URL}/financas')
 
         if response.status_code == 200:
             dados = response.json()
             for dado in dados:
                 data = (
-                    f"ID: {dado["id"]}"
-                    f"Valor: {dado["valor"]}"
-                    f"Categoria: {dado["categoria"]}"
-                    f"Descrição: {dado["descricao"]}"
-                    f"Tipo: {dado["tipo"]}"
+                    f"ID: {dado["id"]}\n"
+                    f"Valor: R$ {float(dado["valor"]):.2f}\n"
+                    f"Categoria: {dado["categoria"]}\n"
+                    f"Descrição: {dado["descricao"]}\n"
+                    f"Tipo: {dado["tipo"]}\n"
                     f"Data: {dado["data"]}"
                 )
                 await update.message.reply_text(data)
@@ -174,7 +176,7 @@ async def atualizar_saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     {"Novo saldo": novo_saldo}
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
             response = await client.put(f'{API_URL}/saldo', json={"saldo": float(novo_saldo)})
         
         if response.status_code == 200:
@@ -195,7 +197,7 @@ async def atualizar_saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ver_saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
             response = await client.get(f'{API_URL}/saldo')
 
         if response.status_code == 200:
@@ -217,7 +219,7 @@ async def deletar_transacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Deletando a transação...")
     
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
             response = await client.delete(f'{API_URL}/financas/{id_transacao}')
         
         if response.status_code == 200:
@@ -250,7 +252,7 @@ async def atualizar_transacao(update: Update, context: ContextTypes.DEFAULT_TYPE
     payload = {"texto": novo_texto}
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
             response = await client.put(f'{API_URL}/financas/{id_str}', json=payload)
         
         if response.status_code == 200:
@@ -277,7 +279,7 @@ async def ver_transacao_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
     ano = partes[1]
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
             response = await client.get(f'{API_URL}/financas/data?mes={mes}&ano={ano}')
     
             if response.status_code == 200:
@@ -310,7 +312,7 @@ async def resumo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ano = partes[1]
 
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
             response = await client.get(f'{API_URL}/resumo?mes={mes}&ano={ano}')
 
             if response.status_code == 200:
