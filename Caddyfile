@@ -1,0 +1,11 @@
+bot-finance-neto.duckdns.org {
+    @minhasEconomias path /integracoes/minhas-economias/conectar /integracoes/minhas-economias/callback
+
+    handle @minhasEconomias {
+        reverse_proxy api:8000
+    }
+
+    handle {
+        respond "Not Found" 404
+    }
+}

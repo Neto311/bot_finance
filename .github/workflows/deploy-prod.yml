@@ -77,6 +77,7 @@ jobs:
 
           test "$(docker inspect --format '{{.State.Health.Status}}' "$API_CONTAINER_ID")" = "healthy"
 
+          docker compose --env-file .env.prod -f compose.prod.yaml up -d --no-deps --force-recreate caddy
           docker compose --env-file .env.prod -f compose.prod.yaml up -d --no-deps --force-recreate bot
           docker compose --env-file .env.prod -f compose.prod.yaml ps
           curl -fsS http://127.0.0.1:8000/
@@ -127,3 +128,15 @@ jobs:
             --output text)
 
           test "$STATUS" = "Success"
+
+          ROOT_STATUS=$(curl --retry 15 --retry-delay 2 --retry-all-errors \
+            --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            https://bot-finance-neto.duckdns.org/)
+
+          test "$ROOT_STATUS" = "404"
+
+          CALLBACK_STATUS=$(curl --silent --show-error \
+            --output /dev/null --write-out '%{http_code}' \
+            https://bot-finance-neto.duckdns.org/integracoes/minhas-economias/callback)
+
+          test "$CALLBACK_STATUS" = "422"
