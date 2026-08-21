@@ -56,8 +56,28 @@ jobs:
           docker compose --env-file .env.prod -f compose.prod.yaml config --quiet
           docker compose --env-file .env.prod -f compose.prod.yaml build
           docker compose --env-file .env.prod -f compose.prod.yaml run --rm migrate
-          docker compose --env-file .env.prod -f compose.prod.yaml up -d db api bot
+          docker compose --env-file .env.prod -f compose.prod.yaml up -d db
+          docker compose --env-file .env.prod -f compose.prod.yaml up -d --no-deps --force-recreate api
 
+          API_CONTAINER_ID="$(docker compose --env-file .env.prod -f compose.prod.yaml ps -q api)"
+
+          for attempt in $(seq 1 30); do
+            API_HEALTH="$(docker inspect --format '{{.State.Health.Status}}' "$API_CONTAINER_ID")"
+
+            if [ "$API_HEALTH" = "healthy" ]; then
+              break
+            fi
+
+            if [ "$API_HEALTH" = "unhealthy" ]; then
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          test "$(docker inspect --format '{{.State.Health.Status}}' "$API_CONTAINER_ID")" = "healthy"
+
+          docker compose --env-file .env.prod -f compose.prod.yaml up -d --no-deps --force-recreate bot
           docker compose --env-file .env.prod -f compose.prod.yaml ps
           curl -fsS http://127.0.0.1:8000/
           DEPLOY_SCRIPT
