@@ -1,0 +1,101 @@
+x-app-image: &app-image
+  build:
+    context: .
+    target: runtime
+  image: bot-finance:${IMAGE_TAG:-local}
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB obrigatoria}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER obrigatoria}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD obrigatoria}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    shm_size: 128mb
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  migrate:
+    <<: *app-image
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL obrigatoria}
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  api:
+    <<: *app-image
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL obrigatoria}
+      API_URL: http://api:8000
+      GROQ: ${GROQ:?GROQ obrigatoria}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      MINHAS_ECONOMIAS_CLIENT_ID: ${MINHAS_ECONOMIAS_CLIENT_ID:-}
+      MINHAS_ECONOMIAS_REDIRECT_URI: ${MINHAS_ECONOMIAS_REDIRECT_URI:-}
+      MINHAS_ECONOMIAS_MCP_URL: ${MINHAS_ECONOMIAS_MCP_URL:-}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: 384m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  bot:
+    <<: *app-image
+    command: ["python", "services/bot_telegram.py"]
+    restart: unless-stopped
+    environment:
+      TELEGRAM: ${TELEGRAM:?TELEGRAM obrigatoria}
+      API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+volumes:
+  postgres_prod_data:

@@ -25,3 +25,18 @@ __pycache__/
 
 # Logs
 *.log
+
+
+# Ambientes e secrets específicos
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+
+# Arquivos temporários de áudio
+audio_temp.ogg
+temp_*.ogg
+
+# Backups locais de banco
+*.sql
+*.dump
