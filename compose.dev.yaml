@@ -1,3 +1,5 @@
+name: bot-finance-dev
+
 x-app-image: &app-image
   build:
     context: .
