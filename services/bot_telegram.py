@@ -16,6 +16,8 @@ API_URL = getenv("API_URL", "http://0.0.0.0:10000")
 
 API_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
 
+AUDIO_TIMEOUT = httpx.Timeout(180.0, connect=10.0)
+
 async def post_init(application):
     await application.bot.set_my_commands(
         [("start", "🏠 Iniciar e ver menu")])
@@ -129,7 +131,8 @@ async def responder_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     with open (caminho, 'rb') as f:
         files ={'file': (caminho, f)}
-        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=AUDIO_TIMEOUT) as client:
+            await update.message.reply_text('Processando áudio...')
             response = await client.post(f'{API_URL}/financas/audio', files=files)
     
     if os.path.exists(caminho):
