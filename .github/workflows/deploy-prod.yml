@@ -1,0 +1,109 @@
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: bot-finance-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: sa-east-1
+  AWS_ACCOUNT_ID: "511100781025"
+  INSTANCE_ID: i-058e27c0ba6f6c23c
+  DEPLOY_ROLE_ARN: arn:aws:iam::511100781025:role/bot-finance-github-deploy-policy
+
+jobs:
+  deploy:
+    name: Deploy via AWS Systems Manager
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Configure temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE_ARN }}
+          role-session-name: bot-finance-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: ${{ env.AWS_ACCOUNT_ID }}
+          mask-aws-account-id: true
+
+      - name: Deploy exact main commit through SSM
+        shell: bash
+        run: |
+          DEPLOY_SCRIPT=$(cat <<'SSM_SCRIPT'
+          runuser -u ec2-user -- bash <<'DEPLOY_SCRIPT'
+          set -Eeuo pipefail
+
+          cd /opt/bot-finance/app
+
+          DEPLOY_SHA="${{ github.sha }}"
+
+          git fetch origin main
+          git switch main
+          git pull --ff-only origin main
+
+          test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
+
+          docker compose --env-file .env.prod -f compose.prod.yaml config --quiet
+          docker compose --env-file .env.prod -f compose.prod.yaml build
+          docker compose --env-file .env.prod -f compose.prod.yaml run --rm migrate
+          docker compose --env-file .env.prod -f compose.prod.yaml up -d db api bot
+
+          docker compose --env-file .env.prod -f compose.prod.yaml ps
+          curl -fsS http://127.0.0.1:8000/
+          DEPLOY_SCRIPT
+          SSM_SCRIPT
+          )
+
+          PARAMETERS=$(jq -n --arg command "$DEPLOY_SCRIPT" '{commands: [$command]}')
+
+          COMMAND_ID=$(aws ssm send-command \
+            --region "$AWS_REGION" \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "Deploy bot-finance ${GITHUB_SHA}" \
+            --timeout-seconds 900 \
+            --parameters "$PARAMETERS" \
+            --query 'Command.CommandId' \
+            --output text)
+
+          echo "SSM command: $COMMAND_ID"
+
+          aws ssm wait command-executed \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" || true
+
+          echo "----- stdout -----"
+          aws ssm get-command-invocation \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardOutputContent' \
+            --output text
+
+          echo "----- stderr -----"
+          aws ssm get-command-invocation \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardErrorContent' \
+            --output text
+
+          STATUS=$(aws ssm get-command-invocation \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'Status' \
+            --output text)
+
+          test "$STATUS" = "Success"
