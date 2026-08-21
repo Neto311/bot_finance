@@ -10,6 +10,7 @@ from datetime import datetime
 import os
 from sqlalchemy import select, extract
 from services.finance_service_factory import obter_finance_service
+import tempfile
 
 
 
@@ -96,10 +97,11 @@ async def adicionar_dados(
 
 @router.post('/financas/audio')
 async def processar_audio(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    temp_path = None
     try:
-        temp_path = f'temp_{file.filename}'
-        with open(temp_path, 'wb') as f:
-            f.write(await file.read())
+        with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as arquivo_temporario:
+            temp_path = arquivo_temporario.name
+            arquivo_temporario.write(await file.read())
         
         texto = extrair_audio(temp_path)
         dados_ia = extrair_colunas(texto)
@@ -139,7 +141,7 @@ async def processar_audio(file: UploadFile = File(...), db: Session = Depends(ge
         db.refresh(novo_item)
 
     finally:
-        if os.path.exists(temp_path):
+        if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
     return novo_item
 
