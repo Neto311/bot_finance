@@ -55,8 +55,8 @@ jobs:
 
           docker compose --env-file .env.prod -f compose.prod.yaml config --quiet
           docker compose --env-file .env.prod -f compose.prod.yaml build
-          docker compose --env-file .env.prod -f compose.prod.yaml run --rm migrate
           docker compose --env-file .env.prod -f compose.prod.yaml up -d db
+          docker compose --env-file .env.prod -f compose.prod.yaml run --rm -T migrate </dev/null
           docker compose --env-file .env.prod -f compose.prod.yaml up -d --no-deps --force-recreate api
 
           API_CONTAINER_ID="$(docker compose --env-file .env.prod -f compose.prod.yaml ps -q api)"
