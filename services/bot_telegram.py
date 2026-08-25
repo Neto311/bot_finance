@@ -1,4 +1,6 @@
+import logging
 import os
+import tempfile
 from os import getenv
 
 import httpx
@@ -11,6 +13,8 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -127,27 +131,37 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Erro: {e}")
 
 async def responder_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    audio = await update.message.voice.get_file()
+    caminho = None
 
-    caminho = "audio_temp.ogg"
+    try:
+        audio = await update.message.voice.get_file()
 
-    await audio.download_to_drive(caminho)
+        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as arquivo_temporario:
+            caminho = arquivo_temporario.name
 
-    with open (caminho, 'rb') as f:
-        files ={'file': (caminho, f)}
-        async with httpx.AsyncClient(timeout=AUDIO_TIMEOUT) as client:
-            await update.message.reply_text('Processando áudio...')
-            response = await client.post(f'{API_URL}/financas/audio', files=files)
+        await audio.download_to_drive(caminho)
+
+        with open (caminho, 'rb') as f:
+            files ={'file': (caminho, f)}
+            async with httpx.AsyncClient(timeout=AUDIO_TIMEOUT) as client:
+                await update.message.reply_text('Processando áudio...')
+                response = await client.post(f'{API_URL}/financas/audio', files=files)
+
+            if response.status_code == 200:
+                dados = response.json()
+                mensagem_sucesso = formatar_mensagem(dados)
+                await update.message.reply_text(mensagem_sucesso)
+            else:
+                await update.message.reply_text("Erro ao salvar no banco")
     
-    if os.path.exists(caminho):
-        os.remove(caminho)
-        
-    if response.status_code == 200:
-        dados = response.json()
-        mensagem_sucesso = formatar_mensagem(dados)
-        await update.message.reply_text(mensagem_sucesso)
-    else:
-        await update.message.reply_text("Erro ao salvar no banco")
+    except Exception:
+        logger.exception("Erro ao processar áudio recebido do Telegram")
+        await update.message.reply_text(
+            "Não consegui processar o áudio. Tente novamente"
+        )
+    finally:
+        if caminho and os.path.exists(caminho):
+            os.remove(caminho)
     
 
 
