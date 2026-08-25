@@ -1,12 +1,16 @@
-from telegram import Update, ReplyKeyboardMarkup, ForceReply
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler,
-    MessageHandler, filters, ContextTypes
-)
+import os
 from os import getenv
-from dotenv import load_dotenv
+
 import httpx
-import os 
+from dotenv import load_dotenv
+from telegram import ForceReply, ReplyKeyboardMarkup, Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 load_dotenv()
 
@@ -334,6 +338,17 @@ async def resumo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"Erro: {e}")
 
+async def meu_id(update, context):
+    usuario = update.effective_user
+
+    if not usuario:
+        await update.message.reply_text('Erro: não foi possível identificar usuário')
+        return
+
+    texto = f'Seu ID do telegram é: {usuario.id}'
+
+    await update.message.reply_text(texto)
+
 
 
 app.add_handler(CommandHandler("start", start))
@@ -346,6 +361,7 @@ app.add_handler(CommandHandler("deletar_transacao", deletar_transacao))
 app.add_handler(CommandHandler("atualizar_transacao", atualizar_transacao))
 app.add_handler(CommandHandler("ver_transacao_data", ver_transacao_data))
 app.add_handler(CommandHandler("resumo", resumo))
+app.add_handler(CommandHandler("meuid",meu_id))
 
 
 
