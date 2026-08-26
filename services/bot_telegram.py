@@ -21,11 +21,9 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 TOKEN_TELEGRAM = getenv("TELEGRAM")
-
+INTERNAL_API_KEY = getenv("INTERNAL_API_KEY")
 API_URL = getenv("API_URL", "http://0.0.0.0:10000")
-
 API_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
-
 AUDIO_TIMEOUT = httpx.Timeout(180.0, connect=10.0)
 
 async def post_init(application):
@@ -59,9 +57,15 @@ async def montar_headers(update: Update):
             )
         return None
 
+    if not INTERNAL_API_KEY:
+        logger.critical("Erro crítico na INTERNAL_API_KEY")
+        await update.message.reply_text("Serviço temporariamente indisponível")
+        return None
+
     return{
         'X-Identity-Provider': 'telegram',
-        'X-External-Identity': str(usuario.id)
+        'X-External-Identity': str(usuario.id),
+        "Authorization": f"Bearer {INTERNAL_API_KEY}"
     }
 
 
@@ -138,9 +142,14 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     payload = {"texto": mensagem, "provedor": "telegram", "identificador_externo": str(usuario_telegram.id)}
 
+    headers = await montar_headers(update)
+
+    if not headers:
+        return 
+
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            response = await client.post(f'{API_URL}/financas', json=payload)
+            response = await client.post(f'{API_URL}/financas', json=payload, headers=headers)
 
         if response.status_code == 200:
             dados = response.json()
@@ -172,6 +181,11 @@ async def responder_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     dados_identidade = {'provedor':'telegram', 'identificador_externo': str(usuario.id)}
 
+    headers = await montar_headers(update)
+    
+    if not headers:
+        return 
+
 
     try:
         audio = await update.message.voice.get_file()
@@ -187,7 +201,7 @@ async def responder_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         async with httpx.AsyncClient(timeout=AUDIO_TIMEOUT) as client:
             await update.message.reply_text('Processando áudio...')
-            response = await client.post(f'{API_URL}/financas/audio', files=files, data=dados_identidade)
+            response = await client.post(f'{API_URL}/financas/audio', files=files, data=dados_identidade, headers=headers)
 
         if response.status_code == 200:
             dados = response.json()

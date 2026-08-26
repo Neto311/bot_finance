@@ -11,8 +11,9 @@ from services.finance_service_factory import obter_finance_service
 import tempfile
 from repositories.identidade_externa_repository import buscar_usuario_id_por_identidade
 from dependencies.identidade import obter_usuario_id_atual
+from dependencies.autenticacao_servico import validar_servico
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(validar_servico)])
 
 async def registrar_texto_financeiro(
     texto: str,
