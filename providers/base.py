@@ -20,3 +20,7 @@ class FinanceProvider(ABC):
     @abstractmethod
     async def listar_cartoes(self):
         pass
+
+    @abstractmethod
+    async def excluir_transacao(self, referencia_externa):
+        pass

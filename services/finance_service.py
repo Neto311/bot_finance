@@ -204,3 +204,7 @@ class FinanceService:
 
 
         return catalogo
+
+    async def excluir_transacao(self, referencia_externa):
+        return await self.provedor.excluir_transacao(referencia_externa)
+    

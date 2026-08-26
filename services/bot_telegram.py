@@ -1,7 +1,9 @@
+import asyncio
 import logging
 import os
 import tempfile
 from os import getenv
+from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
@@ -29,10 +31,10 @@ AUDIO_TIMEOUT = httpx.Timeout(180.0, connect=10.0)
 async def post_init(application):
     await application.bot.set_my_commands(
         [("start", "🏠 Iniciar e ver menu")])
-    
+
 
 app = ApplicationBuilder().token(TOKEN_TELEGRAM).post_init(post_init).build()
-            
+
 
 def formatar_mensagem(dados):
     data_formatada = dados.get('data')
@@ -44,8 +46,23 @@ def formatar_mensagem(dados):
         f"Descrição: {dados.get('descricao')}\n"
         f"Tipo: {dados.get('tipo')}\n"
         f"Data: {data_formatada}\n"
-        
+
     )
+
+async def montar_headers(update: Update):
+    usuario = update.effective_user
+
+    if not usuario:
+        if update.message:
+            await update.message.reply_text(
+                'Erro: usuário não identificado'
+            )
+        return None
+
+    return{
+        'X-Identity-Provider': 'telegram',
+        'X-External-Identity': str(usuario.id)
+    }
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -69,12 +86,12 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text(
             'Qual o ID da transação que deseja DELETAR?',
             reply_markup=ForceReply(selective=True))
-    
+
     if mensagem == '✏️ Editar Item':
         return await update.message.reply_text(
             'Qual o ID da transação que deseja EDITAR e o seu TEXTO? (Ex: 12 pizza 50 reais)',
             reply_markup=ForceReply(selective=True))
-    
+
     if mensagem == '💵 Novo Saldo':
         return await update.message.reply_text(
             'Qual o NOVO SALDO?',
@@ -85,7 +102,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text(
             'Por favor, digite o MÊS e o ANO para o RESUMO(Ex: 05 2024)',
             reply_markup=ForceReply(selective=True))
-    
+
     if mensagem == '🔍 Buscar por Data':
       return await update.message.reply_text(
             'Por favor, digite o MÊS e o ANO para a BUSCA(Ex: 05 2024)',
@@ -94,7 +111,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await ver_itens(update, context)
     elif mensagem == '💰 Consultar Saldo':
         return await ver_saldo(update, context)
-    
+
     if update.message.reply_to_message:
         pergunta = update.message.reply_to_message.text
         if 'MÊS e o ANO' in pergunta:
@@ -113,25 +130,48 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("Processando os dados financeiros...")
 
-    payload = {"texto": mensagem}
+    usuario_telegram = update.effective_user
+
+    if not usuario_telegram:
+        await update.message.reply_text('Erro de identificação')
+        return
+
+    payload = {"texto": mensagem, "provedor": "telegram", "identificador_externo": str(usuario_telegram.id)}
 
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
             response = await client.post(f'{API_URL}/financas', json=payload)
-        
+
         if response.status_code == 200:
             dados = response.json()
             mensagem_sucesso = formatar_mensagem(dados)
             await update.message.reply_text(mensagem_sucesso)
-        
+
         else:
             await update.message.reply_text("Erro ao salvar no banco")
-    
-    except Exception as e:
-        await update.message.reply_text(f"Erro: {e}")
+
+    except httpx.TimeoutException:
+        await update.message.reply_text("A API demorou para responder.")
+
+    except httpx.RequestError:
+        logger.exception("Falha de comunicação com a API")
+        await update.message.reply_text("Não foi possível comunicar com a API.")
+
+    except (ValueError, TypeError):
+        logger.exception("Dados inválidos recebidos pelo bot")
+        await update.message.reply_text("Os dados informados são inválidos.")
 
 async def responder_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caminho = None
+
+    usuario = update.effective_user
+
+    if not usuario:
+        await update.message.reply_text('Usuário não encontrado')
+        return
+
+    dados_identidade = {'provedor':'telegram', 'identificador_externo': str(usuario.id)}
+
 
     try:
         audio = await update.message.voice.get_file()
@@ -141,19 +181,21 @@ async def responder_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await audio.download_to_drive(caminho)
 
-        with open (caminho, 'rb') as f:
-            files ={'file': (caminho, f)}
-            async with httpx.AsyncClient(timeout=AUDIO_TIMEOUT) as client:
-                await update.message.reply_text('Processando áudio...')
-                response = await client.post(f'{API_URL}/financas/audio', files=files)
+        conteudo_audio = await asyncio.to_thread(Path(caminho).read_bytes)
 
-            if response.status_code == 200:
-                dados = response.json()
-                mensagem_sucesso = formatar_mensagem(dados)
-                await update.message.reply_text(mensagem_sucesso)
-            else:
-                await update.message.reply_text("Erro ao salvar no banco")
-    
+        files = {"file": ("audio.ogg", conteudo_audio, "audio/ogg")}
+
+        async with httpx.AsyncClient(timeout=AUDIO_TIMEOUT) as client:
+            await update.message.reply_text('Processando áudio...')
+            response = await client.post(f'{API_URL}/financas/audio', files=files, data=dados_identidade)
+
+        if response.status_code == 200:
+            dados = response.json()
+            mensagem_sucesso = formatar_mensagem(dados)
+            await update.message.reply_text(mensagem_sucesso)
+        else:
+            await update.message.reply_text("Erro ao salvar no banco")
+
     except Exception:
         logger.exception("Erro ao processar áudio recebido do Telegram")
         await update.message.reply_text(
@@ -162,14 +204,20 @@ async def responder_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     finally:
         if caminho and os.path.exists(caminho):
             os.remove(caminho)
-    
 
 
-    
+
+
 async def ver_itens(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    headers = await montar_headers(update)
+
+    if not headers:
+        return
+
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            response = await client.get(f'{API_URL}/financas')
+            response = await client.get(f'{API_URL}/financas', headers=headers)
 
         if response.status_code == 200:
             dados = response.json()
@@ -186,40 +234,63 @@ async def ver_itens(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(f"Erro da API: {response.text}")
 
-    except Exception as e:
-        await update.message.reply_text(f"Erro: {e}")
+    except httpx.TimeoutException:
+        await update.message.reply_text("A API demorou para responder.")
+
+    except httpx.RequestError:
+        logger.exception("Falha de comunicação com a API")
+        await update.message.reply_text("Não foi possível comunicar com a API.")
+
+    except (ValueError, TypeError):
+        logger.exception("Dados inválidos recebidos pelo bot")
+        await update.message.reply_text("Os dados informados são inválidos.")
 
 async def atualizar_saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     novo_saldo = update.message.text.replace('/atualizar_saldo ', '').strip()
 
     await update.message.reply_text("Atualizando o saldo...")
 
-    {"Novo saldo": novo_saldo}
+    headers = await montar_headers(update)
+
+    if not headers:
+        return
 
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            response = await client.put(f'{API_URL}/saldo', json={"saldo": float(novo_saldo)})
-        
+            response = await client.put(f'{API_URL}/saldo', json={"saldo": float(novo_saldo)}, headers=headers)
+
         if response.status_code == 200:
             saldo = response.json()
 
             mensagem_sucesso = (
                 f"Saldo atualizado com sucesso!\n\n"
                 f"Seu saldo é de {saldo}")
-            
+
             await update.message.reply_text(mensagem_sucesso)
 
         else:
             await update.message.reply_text("Erro ao atualizar o saldo")
-    
-    except Exception as e:
-        await update.message.reply_text(f"Erro: {e}")
-                
+
+    except httpx.TimeoutException:
+        await update.message.reply_text("A API demorou para responder.")
+
+    except httpx.RequestError:
+        logger.exception("Falha de comunicação com a API")
+        await update.message.reply_text("Não foi possível comunicar com a API.")
+
+    except (ValueError, TypeError):
+        logger.exception("Dados inválidos recebidos pelo bot")
+        await update.message.reply_text("Os dados informados são inválidos.")
 
 async def ver_saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    headers = await montar_headers(update)
+
+    if not headers:
+        return
+
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            response = await client.get(f'{API_URL}/saldo')
+            response = await client.get(f'{API_URL}/saldo', headers=headers)
 
         if response.status_code == 200:
             dados = response.json()
@@ -231,25 +302,47 @@ async def ver_saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(f"Erro da API: {response.text}")
 
-    except Exception as e:
-        await update.message.reply_text(f"Erro: {e}")
+    except httpx.TimeoutException:
+        await update.message.reply_text("A API demorou para responder.")
+
+    except httpx.RequestError:
+        logger.exception("Falha de comunicação com a API")
+        await update.message.reply_text("Não foi possível comunicar com a API.")
+
+    except (ValueError, TypeError):
+        logger.exception("Dados inválidos recebidos pelo bot")
+        await update.message.reply_text("Os dados informados são inválidos.")
 
 async def deletar_transacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
     id_transacao = update.message.text.replace('/deletar_transacao ', '').strip()
 
+    headers = await montar_headers(update)
+
+    if not headers:
+        return
+
     await update.message.reply_text("Deletando a transação...")
-    
+
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            response = await client.delete(f'{API_URL}/financas/{id_transacao}')
-        
+            response = await client.delete(f'{API_URL}/financas/{id_transacao}', headers=headers)
+
         if response.status_code == 200:
             mensagem_sucesso = "Transação deletada com sucesso!"
             await update.message.reply_text(mensagem_sucesso)
         else:
-            await update.message.reply_text("Erro ao deletar a transação")
-    except Exception as e:
-        await update.message.reply_text(f"Erro: {e}")
+            await update.message.reply_text(f"Erro {response.status_code}: {response.text}")
+
+    except httpx.TimeoutException:
+        await update.message.reply_text("A API demorou para responder.")
+
+    except httpx.RequestError:
+        logger.exception("Falha de comunicação com a API")
+        await update.message.reply_text("Não foi possível comunicar com a API.")
+
+    except (ValueError, TypeError):
+        logger.exception("Dados inválidos recebidos pelo bot")
+        await update.message.reply_text("Os dados informados são inválidos.")
 
 async def atualizar_transacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensagem_transacao = update.message.text.replace('/atualizar_transacao ', '').strip()
@@ -258,34 +351,47 @@ async def atualizar_transacao(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if len(partes) < 2:
         await update.message.reply_text("Formato inválido! Use: /atualizar_transacao ID NOVO_TEXTO")
-        return 
-    
+        return
+
     id_str = partes[0]
     novo_texto = partes[1]
 
     if not id_str.isdigit():
         await update.message.reply_text("ID inválido! Use apenas números.")
         return
-    
+
 
     await update.message.reply_text(f"Atualizando a transação {id_str}")
-    
+
     payload = {"texto": novo_texto}
+
+    headers = await montar_headers(update)
+
+    if not headers:
+        return
 
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            response = await client.put(f'{API_URL}/financas/{id_str}', json=payload)
-        
+            response = await client.put(f'{API_URL}/financas/{id_str}', json=payload, headers=headers)
+
         if response.status_code == 200:
             dados = response.json()
             mensagem_sucesso = formatar_mensagem(dados)
             await update.message.reply_text(mensagem_sucesso)
-        
+
         else:
             await update.message.reply_text(f"Erro ao salvar no banco {response.status_code}: {response.text}")
-    
-    except Exception as e:
-        await update.message.reply_text(f"Erro: {e}")
+
+    except httpx.TimeoutException:
+        await update.message.reply_text("A API demorou para responder.")
+
+    except httpx.RequestError:
+        logger.exception("Falha de comunicação com a API")
+        await update.message.reply_text("Não foi possível comunicar com a API.")
+
+    except (ValueError, TypeError):
+        logger.exception("Dados inválidos recebidos pelo bot")
+        await update.message.reply_text("Os dados informados são inválidos.")
 
 async def ver_transacao_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensagem = update.message.text.replace('/ver_transacao_data ', '').strip()
@@ -299,12 +405,17 @@ async def ver_transacao_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
     mes = partes[0]
     ano = partes[1]
 
+    headers = await montar_headers(update)
+
+    if not headers:
+        return
+
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            response = await client.get(f'{API_URL}/financas/data?mes={mes}&ano={ano}')
-    
+            response = await client.get(f'{API_URL}/financas/data?mes={mes}&ano={ano}', headers=headers)
+
             if response.status_code == 200:
-                dados = response.json() 
+                dados = response.json()
                 for dado in dados:
                     data = (
                         f"ID: {dado["id"]}"
@@ -317,8 +428,16 @@ async def ver_transacao_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     await update.message.reply_text(data)
             else:
                 await update.message.reply_text(f"Erro da API: {response.text}")
-    except Exception as e:
-        await update.message.reply_text(f"Erro: {e}")
+    except httpx.TimeoutException:
+        await update.message.reply_text("A API demorou para responder.")
+
+    except httpx.RequestError:
+        logger.exception("Falha de comunicação com a API")
+        await update.message.reply_text("Não foi possível comunicar com a API.")
+
+    except (ValueError, TypeError):
+        logger.exception("Dados inválidos recebidos pelo bot")
+        await update.message.reply_text("Os dados informados são inválidos.")
 
 async def resumo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensagem = update.message.text.replace('/resumo ', '').strip()
@@ -332,9 +451,14 @@ async def resumo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mes = partes[0]
     ano = partes[1]
 
+    headers = await montar_headers(update)
+
+    if not headers:
+        return
+
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            response = await client.get(f'{API_URL}/resumo?mes={mes}&ano={ano}')
+            response = await client.get(f'{API_URL}/resumo?mes={mes}&ano={ano}', headers=headers)
 
             if response.status_code == 200:
                 dados = response.json()
@@ -347,10 +471,18 @@ async def resumo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     texto += f'- {categoria}: R${valor:.2f}\n'
 
                 await update.message.reply_text(texto, parse_mode='Markdown')
-            else: 
+            else:
                 await update.message.reply_text(f"Erro da API: {response.text}")
-    except Exception as e:
-        await update.message.reply_text(f"Erro: {e}")
+    except httpx.TimeoutException:
+        await update.message.reply_text("A API demorou para responder.")
+
+    except httpx.RequestError:
+        logger.exception("Falha de comunicação com a API")
+        await update.message.reply_text("Não foi possível comunicar com a API.")
+
+    except (ValueError, TypeError):
+        logger.exception("Dados inválidos recebidos pelo bot")
+        await update.message.reply_text("Os dados informados são inválidos.")
 
 async def meu_id(update, context):
     usuario = update.effective_user

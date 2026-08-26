@@ -4,7 +4,8 @@ from datetime import datetime
 
 class RequestFinanca(BaseModel):
     texto: str
-
+    provedor: str
+    identificador_externo: str
 
 class ResponseFinanca(BaseModel):
     id: int
@@ -16,3 +17,6 @@ class ResponseFinanca(BaseModel):
 
 class Usuario(BaseModel):
     saldo: float
+
+class RequestAtualizarFinanca(BaseModel):
+    texto: str

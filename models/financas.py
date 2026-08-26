@@ -13,6 +13,7 @@ class Financa(Base):
     descricao = Column(String, nullable=False)
     tipo = Column(String, nullable=False)
     data = Column(DateTime, default=datetime.now)
+    referencia_externa = Column(String, nullable=True, index=True)
 
 
 class Usuario(Base):
