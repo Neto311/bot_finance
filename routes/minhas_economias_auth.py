@@ -75,7 +75,7 @@ async def callback(code: str, state:str ):
                 'status': 'falha na troca do token',
                 'http_status': response.status_code
             }
-        
+
 @me_router.get('/integracoes/minhas-economias/conectar')
 async def conectar():
     dados_oauth = gerar_dados_oauth()
@@ -123,12 +123,20 @@ async def verificacao():
 
 @me_router.get('/integracoes/minhas-economias/testar-mcp')
 async def mcp():
+
+    servico = await obter_finance_service("usuario_local")
+
+    if isinstance(servico, dict) and servico.get("erro"):
+        return servico
+
     tokens = tokens_oauth.get("usuario_local")
 
     if not tokens:
-        return {'conectado': False}
+        tokens = buscar_tokens("usuario_local")
 
-   
+    if not tokens:
+        return {"conectado": False}
+
     headers = {
         'Authorization': f"{tokens.get('token_type')} {tokens.get('access_token')}",
         'Content-Type': 'application/json',
@@ -163,6 +171,7 @@ async def mcp():
         resultado = evento.get('result', {})
         ferramentas = resultado.get('tools', [])
 
+
         nomes = [ferramenta.get('name') for ferramenta in ferramentas]
         me_= [nome for nome in nomes if nome and nome.startswith("ME_")]
 
@@ -180,7 +189,7 @@ async def mcp():
 
         if isinstance(dados_categorias, dict) and dados_categorias.get('erro'):
             return dados_categorias
-    
+
         if not dados_categorias:
             primeiro_item = None
             chaves_primeiro_item = []
@@ -254,10 +263,10 @@ async def mcp():
 
         if not evento_saldo:
             return {'erro': 'evento_saldo vazio'}
-        
+
         if evento_saldo.get('erro'):
             return evento_saldo
-        
+
         dados_saldo = extrair_dados_resultado_mcp(evento_saldo)
 
         if dados_saldo.get('erro'):
@@ -302,7 +311,7 @@ async def mcp():
                 conta_destino = conta
 
 
-        
+
 
         evento_transacoes = await chamar_ferramenta_mcp(5, 'ME_Transacoes', {
             'types': ['GASTO'],
@@ -320,7 +329,7 @@ async def mcp():
 
         if isinstance(dados_transacao, dict) and dados_transacao.get('erro'):
             return dados_transacao
-        
+
         if not isinstance(dados_transacao, dict):
             return {
                 "erro": "Formato inesperado",
@@ -357,7 +366,7 @@ async def mcp():
         if transporte:
             categoria_ref_presente = True if transporte.get('categoryRef') else False
 
-        
+
         sub_categoria_ref_presente = False
 
         if combustivel:
@@ -511,7 +520,7 @@ async def testar_provider():
 
     if not isinstance(dados_ia_teste, dict):
         return {'erro': 'formato inesperado da Groq'}
-        
+
 
     return{
         'ia_valor': dados_ia_teste.get('valor'),

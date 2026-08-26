@@ -114,4 +114,12 @@ class MinhasEconomiasProvider(FinanceProvider):
 
         return cartoes
 
+    async def excluir_transacao(self, referencia_externa):
+        argumentos = {
+            "transactionRef": referencia_externa,
+            "deleteType": "SINGLE_TRANSACTION"
+        }
+
+        return await self._executar_ferramenta(5, "ME_ExcluirTransacao", argumentos)
+
     

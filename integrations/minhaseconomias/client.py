@@ -21,6 +21,19 @@ async def chamar_ferramenta_mcp(id_chamada, nome_ferramenta, argumentos, headers
     }
     response = await client.post('https://mcp.minhaseconomias.com.br/mcp', headers=headers, json=mensagem)
 
+    if response.status_code == 202:
+        return {
+            "result": {
+                "isError": False,
+                "content": [
+                    {
+                        "type": "text",
+                        "text": '{"accepted": true}'
+                    }
+                ]
+            }
+        }
+
     if response.status_code != 200:
         return {'erro': response.status_code}
 
@@ -64,7 +77,7 @@ def extrair_dados_resultado_mcp(evento):
     try:
         dados = json.loads(texto)
     except json.JSONDecodeError:
-        return{'erro': 'texto da ferramenta não é JSON válido'}
+        return{'texto': texto}
 
     return dados 
     
