@@ -60,6 +60,7 @@ services:
       MINHAS_ECONOMIAS_CLIENT_ID: ${MINHAS_ECONOMIAS_CLIENT_ID:-}
       MINHAS_ECONOMIAS_REDIRECT_URI: ${MINHAS_ECONOMIAS_REDIRECT_URI:-}
       MINHAS_ECONOMIAS_MCP_URL: ${MINHAS_ECONOMIAS_MCP_URL:-}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -89,6 +90,7 @@ services:
     environment:
       TELEGRAM: ${TELEGRAM:?TELEGRAM obrigatoria}
       API_URL: http://api:8000
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
     depends_on:
       api:
         condition: service_healthy
