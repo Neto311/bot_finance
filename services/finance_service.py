@@ -2,7 +2,7 @@ from providers.base import FinanceProvider
 
 class FinanceService:
     def __init__(self, provedor: FinanceProvider):
-        self.provedor = provedor 
+        self.provedor = provedor
 
     async def listar_transacoes(self, filtros):
         return await self.provedor.listar_transacoes(filtros)
@@ -132,7 +132,7 @@ class FinanceService:
 
         if argumentos_mcp.get('erro'):
             return argumentos_mcp
-        
+
         resultado = await self.provedor.criar_transacao(argumentos_mcp)
 
         if isinstance(resultado, dict) and resultado.get('erro'):
@@ -154,7 +154,7 @@ class FinanceService:
 
         for cartao in cartoes:
             if not isinstance(cartao, dict):
-                continue 
+                continue
 
             nome_recebido = cartao.get('name')
 
@@ -207,4 +207,66 @@ class FinanceService:
 
     async def excluir_transacao(self, referencia_externa):
         return await self.provedor.excluir_transacao(referencia_externa)
-    
+
+    async def preparar_edicao_transacao(self, dados):
+
+        if not isinstance(dados, dict):
+            return {"erro": "dados de edição inválidos"}
+
+
+        nome_categoria = dados.get("categoria")
+        nome_subcategoria = dados.get("subcategoria")
+        tipo = dados.get("tipo") or "GASTO"
+
+        categoria = await self.buscar_categoria(
+                nome_categoria,
+                tipo,
+            )
+
+        if not isinstance(categoria, dict):
+            return {"erro": "formato inesperado da categoria"}
+
+        if isinstance(categoria, dict) and categoria.get('erro'):
+            return categoria
+
+        argumentos = {
+            "categoryRef": categoria.get("categoryRef"),
+            "description": dados.get("descricao"),
+            "value": dados.get("valor"),
+        }
+
+        if nome_subcategoria:
+            subcategoria = await self.buscar_subcategorias(
+                nome_categoria,
+                nome_subcategoria,
+                tipo,
+            )
+            if (isinstance(subcategoria, dict) and subcategoria.get("erro")):
+                return subcategoria
+
+            argumentos["subCategoryRef"] = subcategoria.get("subCategoryRef")
+
+        return argumentos
+
+    async def editar_transacao(self, referencia_externa, dados):
+
+        if not referencia_externa:
+            return {'erro': 'sem referência externa'}
+
+        argumentos = await self.preparar_edicao_transacao(dados)
+
+        if not isinstance(argumentos, dict):
+            return{'erro': 'formato de argumentos inesperado'}
+
+        if isinstance(argumentos, dict) and argumentos.get('erro'):
+            return argumentos
+
+        resultado = await self.provedor.editar_transacao(referencia_externa, argumentos)
+
+        if resultado is None:
+            return {'erro': 'MCP não retornou resultado'}
+
+        if isinstance(resultado, dict) and resultado.get('erro'):
+            return resultado
+
+        return resultado

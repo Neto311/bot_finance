@@ -1,17 +1,33 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Path, Body, Form
-from services.groq_client import extrair_colunas, extrair_audio
-from database import get_db
-from sqlalchemy.orm import Session
-from schemas.financas import ResponseFinanca, RequestFinanca, Usuario, RequestAtualizarFinanca
-from models import financas as model
-from datetime import datetime
 import os
-from sqlalchemy import extract
-from services.finance_service_factory import obter_finance_service
 import tempfile
-from repositories.identidade_externa_repository import buscar_usuario_id_por_identidade
-from dependencies.identidade import obter_usuario_id_atual
+from datetime import datetime
+
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Path,
+    UploadFile,
+)
+from sqlalchemy import extract
+from sqlalchemy.orm import Session
+
+from database import get_db
 from dependencies.autenticacao_servico import validar_servico
+from dependencies.identidade import obter_usuario_id_atual
+from models import financas as model
+from repositories.identidade_externa_repository import buscar_usuario_id_por_identidade
+from schemas.financas import (
+    RequestAtualizarFinanca,
+    RequestFinanca,
+    ResponseFinanca,
+    Usuario,
+)
+from services.finance_service_factory import obter_finance_service
+from services.groq_client import extrair_audio, extrair_colunas
 
 router = APIRouter(dependencies=[Depends(validar_servico)])
 
@@ -69,7 +85,7 @@ async def registrar_texto_financeiro(
     if not resultado_mcp:
         raise HTTPException(status_code=502, detail='Minhas economias não confirmou a criação')
 
-    usuario = (db.query(model.Usuario).filter(model.Usuario.id == usuario_id, model.Usuario.ativo.is_(True)).first())
+    usuario = (db.query(model.Usuario).filter(model.Usuario.id == usuario_id, model.Usuario.ativo.is_(True)).with_for_update().first())
 
     if not usuario:
         raise HTTPException(status_code=403)
@@ -86,18 +102,18 @@ async def registrar_texto_financeiro(
         valor = dados_ia.get('valor') or 0.0,
         categoria = dados_ia.get('categoria') or "Outros",
         descricao = dados_ia.get('descricao') or "Sem descrição",
-        tipo = dados_ia.get('tipo') or "Crédito",
+        tipo = dados_ia.get('tipo') or "GASTO",
         data = data_obj,
+        numero_usuario = usuario.proximo_numero_transacao,
         referencia_externa=referencia_externa
     )
 
-    condicao = "Débito"
+    usuario.proximo_numero_transacao += 1
 
-    if novo_item.tipo.lower().strip() == condicao.lower().strip():
-        if usuario:
-            usuario.saldo -= novo_item.valor
-            db.commit()
-            db.refresh(usuario)
+    if novo_item.tipo == "GASTO":
+        usuario.saldo -= novo_item.valor
+    elif novo_item.tipo == "GANHO":
+        usuario.saldo += novo_item.valor
 
 
     db.add(novo_item)
@@ -172,13 +188,14 @@ def ver_saldo(
     return usuario
 
 
-@router.delete('/financas/{id}')
+@router.delete('/financas/{numero_usuario}')
 async def deletar_transacao(
-    id: int,
+    numero_usuario: int,
     usuario_id: int = Depends(obter_usuario_id_atual),
     db: Session = Depends(get_db)
 ):
-    transacao = db.query(model.Financa).filter(model.Financa.id == id, model.Financa.usuario_id == usuario_id).first()
+
+    transacao = db.query(model.Financa).filter(model.Financa.numero_usuario == numero_usuario, model.Financa.usuario_id == usuario_id).first()
 
     if not transacao:
         raise HTTPException(status_code=404, detail="Transação não encontrada")
@@ -211,42 +228,48 @@ async def deletar_transacao(
     return {'mensagem': 'transacao deletada com sucesso'}
 
 
-@router.put('/financas/{id}', response_model=ResponseFinanca)
-def atualizar_transacao(
-    id: int = Path(...),
+@router.put('/financas/{numero_usuario}', response_model=ResponseFinanca)
+async def atualizar_transacao(
+    numero_usuario: int = Path(...),
     usuario_id: int = Depends(obter_usuario_id_atual),
     transacao_nova: RequestAtualizarFinanca = Body(...),
     db: Session = Depends(get_db)):
 
-    transacao = db.query(model.Financa).filter(model.Financa.id == id, model.Financa.usuario_id == usuario_id).first()
+    transacao = db.query(model.Financa).filter(model.Financa.numero_usuario == numero_usuario, model.Financa.usuario_id == usuario_id).first()
 
     if not transacao:
         raise HTTPException(status_code=404, detail="Transação não encontrada")
 
-    usuario = db.query(model.Usuario).filter(model.Usuario.id == usuario_id).first()
+    texto = transacao_nova.texto
+
+    dados_ia = extrair_colunas(texto)
+
+    servico = await obter_finance_service('usuario_local')
+
+    if isinstance(servico, dict) and servico.get('erro'):
+        raise HTTPException(status_code=503, detail=servico.get('erro'))
+
+    if not transacao.referencia_externa:
+        raise HTTPException(status_code=409, detail='Transacao local sem referencia externa')
+
+    resultado_edicao = await servico.editar_transacao(transacao.referencia_externa, dados_ia)
+
+    if(isinstance(resultado_edicao, dict) and resultado_edicao.get('erro')):
+        raise HTTPException(status_code=502, detail=resultado_edicao.get('erro'))
+
+    usuario = (db.query(model.Usuario).filter(model.Usuario.id == usuario_id).with_for_update().first())
+
+    if not usuario:
+        raise HTTPException(status_code=404, detail='Usuário não encontrado')
 
     if usuario and transacao.tipo == "GASTO":
         usuario.saldo += transacao.valor
     elif usuario and transacao.tipo == "GANHO":
         usuario.saldo -= transacao.valor
 
-
-    texto = transacao_nova.texto
-
-    dados_ia = extrair_colunas(texto)
-
-    data_ia = dados_ia.get('data')
-
-    if isinstance(data_ia, str):
-        data_obj = datetime.strptime(data_ia, '%Y-%m-%d')
-    else:
-        data_obj = datetime.now()
-
     transacao.valor = float(dados_ia.get('valor'))
     transacao.categoria = dados_ia.get('categoria')
     transacao.descricao = dados_ia.get('descricao')
-    transacao.tipo = dados_ia.get('tipo') or 'Crédito'
-    transacao.data = data_obj
 
     if usuario and transacao.tipo == "GASTO":
         usuario.saldo -= transacao.valor

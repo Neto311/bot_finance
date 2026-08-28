@@ -1,5 +1,6 @@
-from pydantic import BaseModel
 from datetime import datetime
+
+from pydantic import BaseModel
 
 
 class RequestFinanca(BaseModel):
@@ -14,6 +15,7 @@ class ResponseFinanca(BaseModel):
     descricao: str
     tipo: str
     data: datetime
+    numero_usuario: int
 
 class Usuario(BaseModel):
     saldo: float

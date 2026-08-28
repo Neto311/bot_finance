@@ -122,4 +122,9 @@ class MinhasEconomiasProvider(FinanceProvider):
 
         return await self._executar_ferramenta(5, "ME_ExcluirTransacao", argumentos)
 
+    async def editar_transacao(self, referencia_externa, dados_transacao):
+        argumentos = dados_transacao.copy()
+        argumentos["transactionRef"] = referencia_externa
+
+        return await self._executar_ferramenta(6, "ME_EditarTransacao", argumentos)
     

@@ -24,3 +24,7 @@ class FinanceProvider(ABC):
     @abstractmethod
     async def excluir_transacao(self, referencia_externa):
         pass
+
+    @abstractmethod
+    async def editar_transacao(self, referencia_externa, dados_transacao):
+        pass
