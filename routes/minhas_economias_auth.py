@@ -175,6 +175,40 @@ async def mcp():
         nomes = [ferramenta.get('name') for ferramenta in ferramentas]
         me_= [nome for nome in nomes if nome and nome.startswith("ME_")]
 
+#         candidatas = []
+
+#     for ferramenta in ferramentas:
+#         if not isinstance(ferramenta, dict):
+#             continue
+
+#         nome = ferramenta.get("name")
+
+#         if not nome:
+#             continue
+
+#         nome_normalizado = nome.lower()
+
+#         palavras_busca = ["atual", "editar", "alterar"]
+
+#         if any(palavra in nome_normalizado for palavra in palavras_busca):
+#             input_schema = ferramenta.get("inputSchema") or {}
+#             propriedades = input_schema.get("properties") or {}
+#             obrigatorios = input_schema.get("required") or []
+
+#             candidatas.append(
+#                 {
+#                     "nome": nome,
+#                     "campos": list(propriedades.keys()),
+#                     "obrigatorios": obrigatorios,
+#                     "detalhes_campos": propriedades,
+#                 }
+#             )
+
+#     return {
+#         "quantidade_candidatas": len(candidatas),
+#         "ferramentas": candidatas,
+# }
+
         #chamada get
 
         evento_categoria = await chamar_ferramenta_mcp (3, 'ME_CategoriasDeTransacao', {'typeTransaction': 'GASTO'}, headers_sessao, client)

@@ -38,7 +38,7 @@ def formatar_mensagem(dados):
     data_formatada = dados.get('data')
     return (
         f"Salvo! \n\n"
-        f"ID: {dados.get('id')}\n"
+        f"ID: {dados.get('numero_usuario')}\n"
         f"Categoria: {dados.get('categoria')}\n"
         f"Valor: {dados.get('valor')}\n"
         f"Descrição: {dados.get('descricao')}\n"
@@ -88,7 +88,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if mensagem == '🗑️ Deletar Item':
         return await update.message.reply_text(
-            'Qual o ID da transação que deseja DELETAR?',
+            'Qual o ID da transação que deseja DELETAR? (Ex: 12)',
             reply_markup=ForceReply(selective=True))
 
     if mensagem == '✏️ Editar Item':
@@ -237,7 +237,7 @@ async def ver_itens(update: Update, context: ContextTypes.DEFAULT_TYPE):
             dados = response.json()
             for dado in dados:
                 data = (
-                    f"ID: {dado["id"]}\n"
+                    f"ID: {dado["numero_usuario"]}\n"
                     f"Valor: R$ {float(dado["valor"]):.2f}\n"
                     f"Categoria: {dado["categoria"]}\n"
                     f"Descrição: {dado["descricao"]}\n"
@@ -328,9 +328,15 @@ async def ver_saldo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Os dados informados são inválidos.")
 
 async def deletar_transacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    id_transacao = update.message.text.replace('/deletar_transacao ', '').strip()
+    codigo_transacao = (update.message.text.replace('/deletar_transacao ', '').strip().upper())
+
+    if not codigo_transacao.isdigit():
+        await update.message.reply_text("Código inválido. Informe no formato 12")
+        return
 
     headers = await montar_headers(update)
+
+    numero_usuario = int(codigo_transacao)
 
     if not headers:
         return
@@ -339,7 +345,7 @@ async def deletar_transacao(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            response = await client.delete(f'{API_URL}/financas/{id_transacao}', headers=headers)
+            response = await client.delete(f'{API_URL}/financas/{numero_usuario}', headers=headers)
 
         if response.status_code == 200:
             mensagem_sucesso = "Transação deletada com sucesso!"
@@ -367,15 +373,16 @@ async def atualizar_transacao(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("Formato inválido! Use: /atualizar_transacao ID NOVO_TEXTO")
         return
 
-    id_str = partes[0]
+    numero_usuario_str = partes[0]
     novo_texto = partes[1]
 
-    if not id_str.isdigit():
+    if not numero_usuario_str.isdigit():
         await update.message.reply_text("ID inválido! Use apenas números.")
         return
 
+    numero_usuario = int(numero_usuario_str)
 
-    await update.message.reply_text(f"Atualizando a transação {id_str}")
+    await update.message.reply_text(f"Atualizando a transação {numero_usuario}")
 
     payload = {"texto": novo_texto}
 
@@ -386,7 +393,7 @@ async def atualizar_transacao(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            response = await client.put(f'{API_URL}/financas/{id_str}', json=payload, headers=headers)
+            response = await client.put(f'{API_URL}/financas/{numero_usuario}', json=payload, headers=headers)
 
         if response.status_code == 200:
             dados = response.json()
@@ -432,7 +439,7 @@ async def ver_transacao_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 dados = response.json()
                 for dado in dados:
                     data = (
-                        f"ID: {dado["id"]}"
+                        f"ID: {dado["numero_usuario"]}"
                         f"Valor: {dado["valor"]}"
                         f"Categoria: {dado["categoria"]}"
                         f"Descrição: {dado["descricao"]}"
