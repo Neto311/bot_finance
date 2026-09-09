@@ -8,7 +8,7 @@ load_dotenv()
 
 CLIENT_ID = getenv('MINHAS_ECONOMIAS_CLIENT_ID')
 
-async def renovar_token(usuario, refresh_token):
+async def renovar_token(usuario_id, refresh_token):
     if not refresh_token:
         return {'erro': 'refresh token ausente'}
 
@@ -38,10 +38,10 @@ async def renovar_token(usuario, refresh_token):
                 return{'erro': 'expires_in ausente na renovação'}
 
             registro_salvo = salvar_tokens(
-                usuario, novo_access_token, novo_refresh_token, token_type, expires_in
+                usuario_id, novo_access_token, novo_refresh_token, token_type, expires_in
             )
 
-            tokens_oauth[usuario] = {
+            tokens_oauth[usuario_id] = {
                 'access_token': novo_access_token,
                 'refresh_token': novo_refresh_token,
                 'token_type': token_type,

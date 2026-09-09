@@ -1,39 +1,41 @@
+from datetime import datetime, timedelta
+
 from integrations.minhaseconomias.auth_store import tokens_oauth
 from providers.minhas_economias_provider import MinhasEconomiasProvider
-from services.finance_service import FinanceService
 from repositories.minhas_economias_token_repository import buscar_tokens
-from datetime import datetime, timedelta
+from services.finance_service import FinanceService
 from services.minhas_economias_token_service import renovar_token
 
-async def obter_finance_service(usuario):
-    tokens = tokens_oauth.get(usuario)
+
+async def obter_finance_service(usuario_id):
+    tokens = tokens_oauth.get(usuario_id)
 
     if not tokens:
-        tokens = buscar_tokens(usuario)
+        tokens = buscar_tokens(usuario_id)
 
         if tokens:
-            tokens_oauth[usuario] = tokens
+            tokens_oauth[usuario_id] = tokens
 
         if not tokens:
             return{'erro': 'minhas economias não conectado'}
 
 
     expires_at = tokens.get('expires_at')
-    limite_de_seguranca = datetime.now() + timedelta(minutes=2)
+    limite_de_seguranca = datetime.now() + timedelta(minutes=2) #noqa: DTZ005
 
     if not expires_at:
         return {'erro': 'expires_at ausente'}
 
     if expires_at <= limite_de_seguranca:
-        resultado = await renovar_token(usuario, tokens.get('refresh_token'))
+        resultado = await renovar_token(usuario_id, tokens.get('refresh_token'))
 
         if resultado.get('erro'):
             return resultado
 
-        tokens = tokens_oauth.get(usuario)
+        tokens = tokens_oauth.get(usuario_id)
 
         if not tokens:
-            return {'erro': 'tokens renovados não encontrados no cacho'}
+            return {'erro': 'tokens renovados não encontrados no cache'}
 
     access_token = tokens.get('access_token')
     token_type = tokens.get('token_type')

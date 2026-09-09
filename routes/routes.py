@@ -36,7 +36,7 @@ async def registrar_texto_financeiro(
     usuario_id: int,
     db: Session):
 
-    servico= await obter_finance_service('usuario_local')
+    servico= await obter_finance_service(usuario_id)
 
     if isinstance(servico, dict) and servico.get('erro'):
         raise HTTPException(status_code=503, detail=servico.get('erro'))
@@ -205,7 +205,7 @@ async def deletar_transacao(
     if not transacao.referencia_externa:
         raise HTTPException(status_code=409, detail=("Transação local sem referência externa; " "exclusão automática indisponível"))
 
-    servico = await obter_finance_service("usuario_local")
+    servico = await obter_finance_service(usuario_id)
 
     if isinstance(servico, dict) and servico.get("erro"):
         raise HTTPException(status_code=503, detail=servico.get("erro"))
@@ -244,7 +244,7 @@ async def atualizar_transacao(
 
     dados_ia = extrair_colunas(texto)
 
-    servico = await obter_finance_service('usuario_local')
+    servico = await obter_finance_service(usuario_id)
 
     if isinstance(servico, dict) and servico.get('erro'):
         raise HTTPException(status_code=503, detail=servico.get('erro'))
