@@ -62,3 +62,24 @@ def buscar_tokens(usuario_id):
 
     finally:
         db.close()
+
+def excluir_tokens(usuario_id):
+    db = SessionLocal()
+
+    try:
+        busca = db.query(MinhasEconomiasToken).filter(MinhasEconomiasToken.usuario_id == usuario_id).first()
+        
+        if not busca:
+            return False
+
+        db.delete(busca)
+        db.commit()
+
+        return True
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+        

@@ -90,6 +90,13 @@ async def callback(code: str, state:str ):
 
 @me_router.post('/integracoes/minhas-economias/conectar', dependencies=[Depends(validar_servico)])
 async def conectar(usuario_id: Annotated[int, Depends(obter_usuario_id_atual)]):
+    agora = monotonic()
+
+    states_expirados = [state_existente for state_existente, tentativa in tentativas_oauth.items() if not isinstance(tentativa.get("criado_em"), (int, float)) or agora - tentativa["criado_em"] > 600]
+
+    for state_expirado in states_expirados:
+        tentativas_oauth.pop(state_expirado, None)
+
     dados_oauth = gerar_dados_oauth()
 
     state = dados_oauth['state']

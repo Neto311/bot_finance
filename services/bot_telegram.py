@@ -7,7 +7,7 @@ from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
-from telegram import ForceReply, ReplyKeyboardMarkup, Update
+from telegram import ForceReply, ReplyKeyboardMarkup, Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -145,7 +145,7 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     headers = await montar_headers(update)
 
     if not headers:
-        return 
+        return
 
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
@@ -184,7 +184,7 @@ async def responder_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     headers = await montar_headers(update)
     
     if not headers:
-        return 
+        return
 
 
     try:
@@ -516,6 +516,81 @@ async def meu_id(update, context):
 
     await update.message.reply_text(texto)
 
+async def conectar_minhas_economias(update: Update, context: ContextTypes.DEFAULT_TYPE,):
+    headers = await montar_headers(update)
+
+    if not headers:
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+            response = await client.post(f"{API_URL}/integracoes/minhas-economias/conectar", headers=headers)
+
+            if response.status_code == 200:
+                dados = response.json()
+
+                url_autorizacao = dados.get("url_autorizacao")
+
+                if not url_autorizacao:
+                    await update.message.reply_text("Não foi possível gerar o link de autorização.")
+                    return
+
+                botao = InlineKeyboardButton("🔗 Conectar ao Minhas Economias", url=url_autorizacao)
+                teclado = InlineKeyboardMarkup([[botao]])
+                
+                await update.message.reply_text("Toque abaixo para conectar sua conta:", reply_markup=teclado,)
+
+            elif response.status_code == 403:
+                await update.message.reply_text("Seu usuário não está autorizado.")
+            else:
+                await update.message.reply_text(f"Não foi possível iniciar a conexão. Código: {response.status_code}")
+
+    except httpx.TimeoutException:
+        await update.message.reply_text("A API demorou para responder.")
+
+    except httpx.RequestError:
+        logger.exception("Falha de comunicação com a API")
+        await update.message.reply_text("Não foi possível comunicar com a API.")
+
+    except (ValueError, TypeError):
+        logger.exception("Dados inválidos recebidos pelo bot")
+        await update.message.reply_text("Os dados informados são inválidos.")
+
+async def desconectar_minhas_economias(update: Update, context: ContextTypes.DEFAULT_TYPE,):
+    headers = await montar_headers(update)
+
+    if not headers:
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+            response = await client.delete(f'{API_URL}/integracoes/minhas-economias/conexao', headers=headers)
+
+        if response.status_code == 200:
+            dados = response.json()
+            token_removido = dados.get("token_removido")
+            if token_removido:
+               await update.message.reply_text(" Minhas Economias Desconectado ")
+            else: 
+                await update.message.reply_text(" Sua conta já estava desconectada ")
+
+        elif response.status_code == 403:
+            await update.message.reply_text("Usuário não autorizado")
+
+        else:
+            await update.message.reply_text(f"Não foi possível desconectar. Código: {response.status_code}")
+
+    except httpx.TimeoutException:
+        await update.message.reply_text("A API demorou para responder.")
+
+    except httpx.RequestError:
+        logger.exception("Falha de comunicação com a API")
+        await update.message.reply_text("Não foi possível comunicar com a API.")
+
+    except (ValueError, TypeError):
+        logger.exception("Dados inválidos recebidos pelo bot")
+        await update.message.reply_text("Os dados informados são inválidos.")
+
 
 
 app.add_handler(CommandHandler("start", start))
@@ -529,6 +604,8 @@ app.add_handler(CommandHandler("atualizar_transacao", atualizar_transacao))
 app.add_handler(CommandHandler("ver_transacao_data", ver_transacao_data))
 app.add_handler(CommandHandler("resumo", resumo))
 app.add_handler(CommandHandler("meuid",meu_id))
+app.add_handler(CommandHandler("conectar_minhas_economias", conectar_minhas_economias))
+app.add_handler(CommandHandler("desconectar_minhas_economias", desconectar_minhas_economias))
 
 
 
