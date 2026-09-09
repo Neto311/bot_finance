@@ -1,25 +1,25 @@
-from fastapi import APIRouter
-from fastapi.responses import RedirectResponse
-from services.minhas_economias_oauth import gerar_dados_oauth
-from integrations.minhaseconomias.client import extrair_evento_sse, chamar_ferramenta_mcp, extrair_dados_resultado_mcp, inicializar_sessao_mcp
-from urllib.parse import urlencode
 from os import getenv
-from dotenv import load_dotenv
+from time import monotonic
+from typing import Annotated
+from urllib.parse import urlencode
+
 import httpx
-import json
-from datetime import datetime, date
-from providers.minhas_economias_provider import MinhasEconomiasProvider
-from services.finance_service import FinanceService
-from services.groq_client import extrair_colunas
-from integrations.minhaseconomias.auth_store import tokens_oauth, tentativas_oauth
-from services.finance_service_factory import obter_finance_service
-from repositories.minhas_economias_token_repository import salvar_tokens, buscar_tokens
-from services.minhas_economias_token_service import renovar_token
+from dotenv import load_dotenv
+from fastapi import APIRouter, Depends
+
+from dependencies.autenticacao_servico import validar_servico
+from dependencies.identidade import obter_usuario_id_atual
+from integrations.minhaseconomias.auth_store import tentativas_oauth, tokens_oauth
+from repositories.minhas_economias_token_repository import (
+    buscar_tokens,
+    excluir_tokens,
+    salvar_tokens,
+)
+from services.minhas_economias_oauth import gerar_dados_oauth
 
 load_dotenv()
 CLIENT_ID = getenv("MINHAS_ECONOMIAS_CLIENT_ID")
 REDIRECT_URI = getenv("MINHAS_ECONOMIAS_REDIRECT_URI")
-USUARIO_MVP_ID = 1
 
 me_router = APIRouter()
 
@@ -29,8 +29,15 @@ async def callback(code: str, state:str ):
         return {'erro': 'Tentativa do oauth expirada ou inválida'}
 
     tentativa = tentativas_oauth.pop(state)
+    criado_em = tentativa.get("criado_em")
     code_verifier = tentativa["code_verifier"]
     usuario_id = tentativa.get("usuario_id")
+
+    if not isinstance(criado_em, (int, float)):
+        return {'erro': 'tentativa OAuth inválida'}
+
+    if monotonic() - criado_em > 600:
+        return {'erro': 'tentativa OAuth expirada'}
 
     if not isinstance(usuario_id, int):
         return{'erro': 'usuário OAuth inválido'}
@@ -44,7 +51,7 @@ async def callback(code: str, state:str ):
             }
 
     async with httpx.AsyncClient() as client:
-        response = await client.post(f'https://mcp.minhaseconomias.com.br/oauth/token', data=data)
+        response = await client.post('https://mcp.minhaseconomias.com.br/oauth/token', data=data)
 
         if response.status_code == 200:
             dados = response.json()
@@ -81,15 +88,16 @@ async def callback(code: str, state:str ):
                 'http_status': response.status_code
             }
 
-@me_router.get('/integracoes/minhas-economias/conectar')
-async def conectar():
+@me_router.post('/integracoes/minhas-economias/conectar', dependencies=[Depends(validar_servico)])
+async def conectar(usuario_id: Annotated[int, Depends(obter_usuario_id_atual)]):
     dados_oauth = gerar_dados_oauth()
 
     state = dados_oauth['state']
 
     tentativas_oauth[state] = {
         "code_verifier": dados_oauth["code_verifier"],
-        'usuario_id': USUARIO_MVP_ID
+        'usuario_id': usuario_id,
+        "criado_em": monotonic()
     }
 
     parametros = {
@@ -104,18 +112,18 @@ async def conectar():
 
     url_autorizacao = (f"https://mcp.minhaseconomias.com.br/oauth/authorize?{urlencode(parametros)}")
 
-    return RedirectResponse(url=url_autorizacao)
+    return {'url_autorizacao': url_autorizacao}
 
 
-@me_router.get('/integracoes/minhas-economias/status')
-async def verificacao():
-    tokens = tokens_oauth.get(USUARIO_MVP_ID)
+@me_router.get('/integracoes/minhas-economias/status', dependencies=[Depends(validar_servico)])
+async def verificacao(usuario_id: Annotated[int, Depends(obter_usuario_id_atual)]):
+    tokens = tokens_oauth.get(usuario_id)
 
     if not tokens:
-        tokens = buscar_tokens(USUARIO_MVP_ID)
+        tokens = buscar_tokens(usuario_id)
 
         if tokens:
-            tokens_oauth[USUARIO_MVP_ID] = tokens
+            tokens_oauth[usuario_id] = tokens
 
         if not tokens:
             return {'conectado': False}
@@ -126,3 +134,10 @@ async def verificacao():
         'token_type': tokens.get('token_type'),
         'expires_at': tokens.get('expires_at')
     }
+
+@me_router.delete('/integracoes/minhas-economias/conexao', dependencies=[Depends(validar_servico)])
+async def delete_tokens(usuario_id: Annotated[int, Depends(obter_usuario_id_atual)]):
+    removido = excluir_tokens(usuario_id)
+    tokens_oauth.pop(usuario_id, None)
+
+    return{'conectado': False, 'token_removido': removido}
