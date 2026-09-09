@@ -1,16 +1,17 @@
-from database import SessionLocal
-from models.minhas_economias_token import MinhasEconomiasToken
 from datetime import datetime, timedelta
 
+from database import SessionLocal
+from models.minhas_economias_token import MinhasEconomiasToken
 
-def salvar_tokens(usuario, access_token, refresh_token, token_type, expires_in):
+
+def salvar_tokens(usuario_id, access_token, refresh_token, token_type, expires_in):
     db = SessionLocal()
 
     try:
         expires_at = datetime.now() + timedelta(seconds=int(expires_in))
 
         registro = (
-            db.query(MinhasEconomiasToken).filter(MinhasEconomiasToken.usuario == usuario).first()
+            db.query(MinhasEconomiasToken).filter(MinhasEconomiasToken.usuario_id == usuario_id).first()
         )
 
         if registro:
@@ -23,7 +24,7 @@ def salvar_tokens(usuario, access_token, refresh_token, token_type, expires_in):
 
         else:
             registro = MinhasEconomiasToken(
-                usuario = usuario,
+                usuario_id = usuario_id,
                 access_token = access_token,
                 refresh_token = refresh_token,
                 token_type = token_type,
@@ -43,11 +44,11 @@ def salvar_tokens(usuario, access_token, refresh_token, token_type, expires_in):
     finally:
         db.close()
 
-def buscar_tokens(usuario):
+def buscar_tokens(usuario_id):
     db = SessionLocal()
 
     try:
-        busca = db.query(MinhasEconomiasToken).filter(MinhasEconomiasToken.usuario == usuario).first()
+        busca = db.query(MinhasEconomiasToken).filter(MinhasEconomiasToken.usuario_id == usuario_id).first()
 
         if not busca:
             return None
