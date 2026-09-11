@@ -16,7 +16,8 @@ dependencies = [
     "python-multipart (>=0.0.29,<0.0.30)",
     "psycopg2-binary (>=2.9.12,<3.0.0)",
     "twilio (>=9.10.9,<10.0.0)",
-    "alembic (>=1.16,<2.0)"
+    "alembic (>=1.16,<2.0)",
+    "cryptography (>=50.0.1,<51.0.0)"
 ]
 
 [tool.poetry]
