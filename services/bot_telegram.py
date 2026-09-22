@@ -7,7 +7,13 @@ from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
-from telegram import ForceReply, ReplyKeyboardMarkup, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    ForceReply,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    Update,
+)
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -70,18 +76,61 @@ async def montar_headers(update: Update):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    teclado = [
-        ['📋 Ver Gastos', '💰 Consultar Saldo'],
-        ['📊 Gerar Resumo', '🔍 Buscar por Data'],
-        ['🗑️ Deletar Item', '✏️ Editar Item', '💵 Novo Saldo']
-        ]
 
-    markup = ReplyKeyboardMarkup(teclado, resize_keyboard=True, one_time_keyboard=False)
+    try:
+        usuario = update.effective_user
 
-    await update.message.reply_text(
-        'Olá! Escolha uma opção rápida ou envie um áudio/texto para anotar um gasto:',
-        reply_markup=markup
-    )
+        if not usuario or not update.message:
+            return
+        
+        headers = await montar_headers(update)
+
+        if not headers:
+            return
+
+        payload = {
+            "provedor": "telegram",
+            "identificador_externo": str(usuario.id),
+            "nome": usuario.full_name or usuario.username or "Usuário"
+        }
+
+        async with httpx.AsyncClient (timeout=API_TIMEOUT) as client:
+            response = await client.post(f"{API_URL}/usuarios/onboarding", headers=headers, json=payload)
+
+            if response.status_code == 200:
+                teclado = [
+                    ['📋 Ver Gastos', '💰 Consultar Saldo'],
+                    ['📊 Gerar Resumo', '🔍 Buscar por Data'],
+                    ['🗑️ Deletar Item', '✏️ Editar Item', '💵 Novo Saldo']
+                    ]
+
+                markup = ReplyKeyboardMarkup(teclado, resize_keyboard=True, one_time_keyboard=False)
+
+                await update.message.reply_text(
+                    'Olá! Escolha uma opção rápida ou envie um áudio/texto para anotar um gasto:',
+                    reply_markup=markup
+                )
+
+            elif response.status_code == 403:
+                await update.message.reply_text(
+                    "Usuário desativado"
+                )
+
+            else:
+                await update.message.reply_text(
+                    f"Não foi possível inciar. Código {response.status_code}"
+                )
+
+    except httpx.TimeoutException:
+        await update.message.reply_text("A API demorou para responder.")
+
+    except httpx.RequestError:
+        logger.exception("Falha de comunicação com a API")
+        await update.message.reply_text("Não foi possível comunicar com a API.")
+
+    except (ValueError, TypeError):
+        logger.exception("Dados inválidos recebidos pelo bot")
+        await update.message.reply_text("Os dados informados são inválidos.")
 
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensagem = update.message.text
