@@ -538,10 +538,12 @@ async def conectar_minhas_economias(update: Update, context: ContextTypes.DEFAUL
                 botao = InlineKeyboardButton("🔗 Conectar ao Minhas Economias", url=url_autorizacao)
                 teclado = InlineKeyboardMarkup([[botao]])
                 
-                await update.message.reply_text( "Para conectar ao Minhas Economias:\n\n",
-                                                    "1. Mantenha pressionado o link abaixo.\n",
-                                                    "2. Escolha “Abrir no Safari” ou “Abrir no Chrome”.\n\n",
-                                                    f"{url_autorizacao}", reply_markup=teclado,)
+                await update.message.reply_text(
+                    ("Para conectar ao Minhas Economias:\n\n"
+                    "1. Mantenha pressionado o link abaixo.\n"
+                    "2. Escolha “Abrir no Safari” ou “Abrir no Chrome”.\n\n"
+                    f"{url_autorizacao}"),
+                     reply_markup=teclado,)
 
             elif response.status_code == 403:
                 await update.message.reply_text("Seu usuário não está autorizado.")

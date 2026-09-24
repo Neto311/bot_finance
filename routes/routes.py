@@ -1,6 +1,7 @@
 import os
 import tempfile
 from datetime import datetime
+from math import isfinite
 
 from fastapi import (
     APIRouter,
@@ -28,6 +29,7 @@ from schemas.financas import (
 )
 from services.finance_service_factory import obter_finance_service
 from services.groq_client import extrair_audio, extrair_colunas
+from repositories.integracao_usuario_repository import buscar_integracao_principal
 
 router = APIRouter(dependencies=[Depends(validar_servico)])
 
@@ -48,13 +50,12 @@ async def registrar_texto_financeiro(
 
     dados_ia = extrair_colunas(texto, catalogo)
 
-    if not isinstance(dados_ia, dict):
-        raise HTTPException(status_code=502)
-
-    if dados_ia.get('tipo') != 'GASTO':
-        raise HTTPException(status_code=422, detail='MVP aceita somente gastos')
+    dados_validados = validar_dados(dados_ia)
 
     resultado_mcp = await servico.registrar_transacao(dados_ia)
+
+    if isinstance(resultado_mcp, dict) and resultado_mcp.get("erro"):
+        raise HTTPException(status_code=502, detail=resultado_mcp["erro"])
 
     if not isinstance(resultado_mcp, list) or not resultado_mcp:
         raise HTTPException(
@@ -78,49 +79,84 @@ async def registrar_texto_financeiro(
             detail="Minhas Economias não retornou a referência da transação"
         )
 
+    return salvar_financa(db, usuario_id, dados_validados, referencia_externa)
 
-    if isinstance(resultado_mcp, dict) and resultado_mcp.get('erro'):
-        raise HTTPException(status_code=502, detail=resultado_mcp.get('erro'))
+async def registrar_texto_local(
+        texto: str, usuario_id: int, db: Session,
+):
+    dados_ia = extrair_colunas(texto, [])
+    dados_validados = validar_dados(dados_ia)
 
-    if not resultado_mcp:
-        raise HTTPException(status_code=502, detail='Minhas economias não confirmou a criação')
+    return salvar_financa(db, usuario_id, dados_validados)
 
+
+async def registrar_conforme_integracao(texto, usuario_id, db):
+    provedor = buscar_integracao_principal(usuario_id)
+
+    if provedor == "local":
+        return await registrar_texto_local(texto, usuario_id, db)
+    elif provedor == "minhas_economias":
+        return await registrar_texto_financeiro(texto, usuario_id, db)
+
+    raise HTTPException(status_code=409, detail="Deve ser informado o banco de armazenamento dos dados")
+
+
+def validar_dados(dados):
+    if not isinstance(dados, dict):
+            raise HTTPException(status_code=502, detail="Resposta inváida da extração")
+
+    if dados.get("tipo") != "GASTO":
+        raise HTTPException(status_code=422, detail="MVP aceita somente gastos")
+
+    try:
+        valor = float(dados["valor"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Valor inválido") from None
+
+    if not isfinite(valor) or valor <= 0:
+        raise HTTPException(status_code=422, detail="Valor deve ser positivo e finito")
+
+    data_ia = dados.get('data')
+
+    try:
+        data_obj = datetime.strptime(data_ia, "%Y-%m-%d")
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Data inválida") from None
+
+    return {
+    "valor": valor,
+    "categoria": dados.get("categoria") or "Outros",
+    "descricao": dados.get("descricao") or "Sem descrição",
+    "tipo": "GASTO",
+    "data": data_obj}
+    
+
+def salvar_financa(db: Session, usuario_id: int, dados: dict, referencia_externa: str | None = None) -> model.Financa: 
     usuario = (db.query(model.Usuario).filter(model.Usuario.id == usuario_id, model.Usuario.ativo.is_(True)).with_for_update().first())
 
     if not usuario:
-        raise HTTPException(status_code=403)
-
-    data_ia = dados_ia.get('data')
-
-    if isinstance(data_ia, str):
-        data_obj = datetime.strptime(data_ia, '%Y-%m-%d')
-    else:
-        data_obj = datetime.now()
-
+        raise HTTPException(status_code=403, detail="Usuário não autorizado")
+    
     novo_item = model.Financa(
         usuario_id=usuario_id,
-        valor = dados_ia.get('valor') or 0.0,
-        categoria = dados_ia.get('categoria') or "Outros",
-        descricao = dados_ia.get('descricao') or "Sem descrição",
-        tipo = dados_ia.get('tipo') or "GASTO",
-        data = data_obj,
+        valor = dados['valor'],
+        categoria = dados['categoria'],
+        descricao = dados['descricao'],
+        tipo = dados['tipo'],
+        data = dados["data"],
         numero_usuario = usuario.proximo_numero_transacao,
-        referencia_externa=referencia_externa
-    )
+        referencia_externa=referencia_externa)
 
     usuario.proximo_numero_transacao += 1
 
-    if novo_item.tipo == "GASTO":
-        usuario.saldo -= novo_item.valor
-    elif novo_item.tipo == "GANHO":
-        usuario.saldo += novo_item.valor
-
+    usuario.saldo -= dados["valor"]
 
     db.add(novo_item)
     db.commit()
     db.refresh(novo_item)
 
     return novo_item
+
 
 @router.post('/financas/audio', response_model=ResponseFinanca)
 async def processar_audio(file: UploadFile = File(...), provedor: str = Form(...), identificador_externo: str =Form(...), db: Session = Depends(get_db)):
@@ -137,7 +173,7 @@ async def processar_audio(file: UploadFile = File(...), provedor: str = Form(...
 
         texto = extrair_audio(temp_path)
 
-        return await registrar_texto_financeiro(texto, usuario_id, db)
+        return await registrar_conforme_integracao(texto, usuario_id, db)
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
@@ -148,7 +184,7 @@ async def adicionar_dados(request: RequestFinanca, db: Session = Depends(get_db)
 
     if not usuario_id:
         raise HTTPException(status_code=403, detail='identidade não autorizada')
-    return await registrar_texto_financeiro(request.texto, usuario_id, db)
+    return await registrar_conforme_integracao(request.texto, usuario_id, db)
 
 @router.get ('/financas', response_model = list[ResponseFinanca])
 def ver_itens(
@@ -200,26 +236,26 @@ async def deletar_transacao(
     if not transacao:
         raise HTTPException(status_code=404, detail="Transação não encontrada")
 
-    usuario = (db.query(model.Usuario).filter(model.Usuario.id == usuario_id, model.Usuario.ativo.is_(True)).first())
+    if transacao.referencia_externa:
+        servico = await obter_finance_service(usuario_id)
+        if isinstance(servico, dict) and servico.get("erro"):
+            raise HTTPException(status_code=503, detail=servico.get("erro"))
+    
+        resultado_exclusao = await servico.excluir_transacao(transacao.referencia_externa)
+    
+        if(
+            isinstance(resultado_exclusao, dict) and resultado_exclusao.get("erro")
+        ):
+            raise HTTPException(status_code=502, detail=resultado_exclusao.get("erro"))
 
-    if not transacao.referencia_externa:
-        raise HTTPException(status_code=409, detail=("Transação local sem referência externa; " "exclusão automática indisponível"))
+    usuario = (db.query(model.Usuario).filter(model.Usuario.id == usuario_id, model.Usuario.ativo.is_(True)).with_for_update().first())
 
-    servico = await obter_finance_service(usuario_id)
-
-    if isinstance(servico, dict) and servico.get("erro"):
-        raise HTTPException(status_code=503, detail=servico.get("erro"))
-
-    resultado_exclusao = await servico.excluir_transacao(transacao.referencia_externa)
-
-    if(
-        isinstance(resultado_exclusao, dict) and resultado_exclusao.get("erro")
-    ):
-        raise HTTPException(status_code=502, detail=resultado_exclusao.get("erro"))
-
-    if usuario and transacao.tipo == "GASTO":
+    if not usuario:
+        raise HTTPException(status_code=403, detail="Usuário não autorizado")
+    
+    if transacao.tipo == "GASTO":
         usuario.saldo += transacao.valor
-    elif usuario and transacao.tipo == "GANHO":
+    elif transacao.tipo == "GANHO":
         usuario.saldo -= transacao.valor
 
     db.delete(transacao)
@@ -240,48 +276,46 @@ async def atualizar_transacao(
     if not transacao:
         raise HTTPException(status_code=404, detail="Transação não encontrada")
 
+    if transacao.tipo != "GASTO":
+        raise HTTPException(
+            status_code=422,
+            detail="Edição de ganhos ainda indisponível",
+        )
+
     texto = transacao_nova.texto
 
     dados_ia = extrair_colunas(texto)
 
-    servico = await obter_finance_service(usuario_id)
+    dados_validados = validar_dados(dados_ia)
 
-    if isinstance(servico, dict) and servico.get('erro'):
-        raise HTTPException(status_code=503, detail=servico.get('erro'))
+    if transacao.referencia_externa:
+        servico = await obter_finance_service(usuario_id)
 
-    if not transacao.referencia_externa:
-        raise HTTPException(status_code=409, detail='Transacao local sem referencia externa')
+        if isinstance(servico, dict) and servico.get('erro'):
+            raise HTTPException(status_code=503, detail=servico.get('erro'))
 
-    resultado_edicao = await servico.editar_transacao(transacao.referencia_externa, dados_ia)
+        resultado_edicao = await servico.editar_transacao(transacao.referencia_externa, dados_ia)
 
-    if(isinstance(resultado_edicao, dict) and resultado_edicao.get('erro')):
-        raise HTTPException(status_code=502, detail=resultado_edicao.get('erro'))
+        if(isinstance(resultado_edicao, dict) and resultado_edicao.get('erro')):
+            raise HTTPException(status_code=502, detail=resultado_edicao.get('erro'))
 
-    usuario = (db.query(model.Usuario).filter(model.Usuario.id == usuario_id).with_for_update().first())
+    usuario = (db.query(model.Usuario).filter(model.Usuario.id == usuario_id, model.Usuario.ativo.is_(True)).with_for_update().first())
 
     if not usuario:
         raise HTTPException(status_code=404, detail='Usuário não encontrado')
 
-    if usuario and transacao.tipo == "GASTO":
-        usuario.saldo += transacao.valor
-    elif usuario and transacao.tipo == "GANHO":
-        usuario.saldo -= transacao.valor
+    usuario.saldo += transacao.valor
 
-    transacao.valor = float(dados_ia.get('valor'))
-    transacao.categoria = dados_ia.get('categoria')
-    transacao.descricao = dados_ia.get('descricao')
+    transacao.valor = dados_validados["valor"]
+    transacao.categoria = dados_validados["categoria"]
+    transacao.descricao = dados_validados["descricao"]
 
-    if usuario and transacao.tipo == "GASTO":
-        usuario.saldo -= transacao.valor
-    elif usuario and transacao.tipo == "GANHO":
-        usuario.saldo += transacao.valor
+    usuario.saldo -= transacao.valor
 
     db.commit()
     db.refresh(transacao)
 
     return transacao
-
-
 
 @router.get('/financas/data')
 def ver_transacao_data(
@@ -297,7 +331,6 @@ def ver_transacao_data(
     ).all()
 
     return dados
-
 
 @router.get('/resumo')
 def resumo(
@@ -331,5 +364,3 @@ def resumo(
         "gasto_total": gasto_total,
         "categorias": categorias
     }
-
-
