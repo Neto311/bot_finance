@@ -6,7 +6,6 @@ from models.minhas_economias_token import MinhasEconomiasToken
 from services.token_crypto_service import (
     criptografar_token,
     descriptografar_token,
-    token_esta_criptografado,
 )
 
 
@@ -14,7 +13,7 @@ def salvar_tokens(usuario_id, access_token, refresh_token, token_type, expires_i
     db = SessionLocal()
 
     try:
-        expires_at = datetime.now() + timedelta(# noqa: DTZ005
+        expires_at = datetime.now() + timedelta(  # noqa: DTZ005
             seconds=int(expires_in))
 
         access_token_criptografado = criptografar_token(access_token)
@@ -70,14 +69,8 @@ def buscar_tokens(usuario_id):
         if not busca:
             return None
 
-        access_token = busca.access_token
-        refresh_token = busca.refresh_token
-
-        if token_esta_criptografado(access_token):
-            access_token = descriptografar_token(access_token)
-
-        if token_esta_criptografado(refresh_token):
-            refresh_token = descriptografar_token(refresh_token)
+        access_token = descriptografar_token(busca.access_token)
+        refresh_token = descriptografar_token(busca.refresh_token)
 
         return {
             'access_token': access_token,
