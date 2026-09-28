@@ -74,6 +74,25 @@ async def montar_headers(update: Update):
         "Authorization": f"Bearer {INTERNAL_API_KEY}"
     }
 
+def montar_teclado_principal():
+    teclado = [
+        ["📋 Ver Gastos", "💰 Consultar Saldo"],
+        ["📊 Gerar Resumo", "🔍 Buscar por Data"],
+        ["🗑️ Deletar Item", "✏️ Editar Item", "💵 Novo Saldo"],
+        ["⚙️ Alterar integração"],
+    ]
+
+    return ReplyKeyboardMarkup(
+        teclado, resize_keyboard=True, one_time_keyboard=False
+    )
+
+def montar_teclado_integracoes():
+    teclado = [
+            ["Usar banco local"],
+            ["Minhas Economias"],
+            ["Já conectei ao Minhas Economias"],
+        ]
+    return ReplyKeyboardMarkup(teclado, resize_keyboard=True, one_time_keyboard=False)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -98,17 +117,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = await client.post(f"{API_URL}/usuarios/onboarding", headers=headers, json=payload)
 
             if response.status_code == 200:
-                teclado = [
-                    ['📋 Ver Gastos', '💰 Consultar Saldo'],
-                    ['📊 Gerar Resumo', '🔍 Buscar por Data'],
-                    ['🗑️ Deletar Item', '✏️ Editar Item', '💵 Novo Saldo']
-                    ]
+                response_2 = await client.get(f"{API_URL}/usuarios/integracao-principal", headers=headers)
 
-                markup = ReplyKeyboardMarkup(teclado, resize_keyboard=True, one_time_keyboard=False)
+                if response_2.status_code != 200:
+                    await update.message.reply_text("Não foi possível consutlar a integração")
+                    return
+                
+                provedor = response_2.json().get("provedor")
+
+                if not provedor:
+                    await update.message.reply_text("Escolha a forma de armazenamento de seus dados: ", reply_markup=montar_teclado_integracoes())
+                    return
 
                 await update.message.reply_text(
                     'Olá! Escolha uma opção rápida ou envie um áudio/texto para anotar um gasto:',
-                    reply_markup=markup
+                    reply_markup=montar_teclado_principal(),
                 )
 
             elif response.status_code == 403:
@@ -134,6 +157,70 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mensagem = update.message.text
+
+    if mensagem == "⚙️ Alterar integração":
+        await update.message.reply_text("Escolha a integração que deseja usar", reply_markup=montar_teclado_integracoes())
+        return 
+    
+    if mensagem== "Usar banco local":
+        headers = await montar_headers(update)
+
+        if not headers:
+            return 
+
+        provedor = {'provedor': "local"}
+
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+            response = await client.post(f'{API_URL}/usuarios/integracao-principal', headers=headers, json=provedor)
+
+        if response.status_code != 200:
+            await update.message.reply_text("Não foi possível realizar a integração")
+            return
+
+        await update.message.reply_text(
+            "Banco local selecionado! Já pode registrar seus gastos.",
+            reply_markup=montar_teclado_principal(),
+        )
+        return
+
+
+    if mensagem == "Minhas Economias":
+       await conectar_minhas_economias(update, context)
+       return
+
+    if mensagem == "Já conectei ao Minhas Economias":
+        headers = await montar_headers(update)
+
+        if not headers:
+            return
+
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+            response = await client.get(f"{API_URL}/integracoes/minhas-economias/status", headers=headers)
+
+            if response.status_code != 200:
+                await update.message.reply_text("A conexão ao Minhas Economias não foi estabelecida")
+                return
+
+            status = response.json().get("conectado")
+
+            if not status:
+                await update.message.reply_text("A autorização não foi concluída")
+                return
+
+            provedor = {"provedor": "minhas_economias"}
+
+            response_2 = await client.post(f"{API_URL}/usuarios/integracao-principal", headers=headers, json=provedor)
+
+            if response_2.status_code != 200:
+                await update.message.reply_text("Não foi possível realizar a integração")
+                return
+            
+
+            await update.message.reply_text(
+                "Banco Minhas Economias selecionado! Já pode registrar seus gastos.",
+                reply_markup=montar_teclado_principal(),
+            )
+            return
 
     if mensagem == '🗑️ Deletar Item':
         return await update.message.reply_text(
@@ -267,8 +354,6 @@ async def responder_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     finally:
         if caminho and os.path.exists(caminho):
             os.remove(caminho)
-
-
 
 
 async def ver_itens(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -587,7 +672,12 @@ async def conectar_minhas_economias(update: Update, context: ContextTypes.DEFAUL
                 botao = InlineKeyboardButton("🔗 Conectar ao Minhas Economias", url=url_autorizacao)
                 teclado = InlineKeyboardMarkup([[botao]])
                 
-                await update.message.reply_text("Toque abaixo para conectar sua conta:", reply_markup=teclado,)
+                await update.message.reply_text(
+                    ("Para conectar ao Minhas Economias:\n\n"
+                    "1. Mantenha pressionado o link abaixo.\n"
+                    "2. Escolha “Abrir no Safari” ou “Abrir no Chrome”.\n\n"
+                    f"{url_autorizacao}"),
+                     reply_markup=teclado,)
 
             elif response.status_code == 403:
                 await update.message.reply_text("Seu usuário não está autorizado.")
