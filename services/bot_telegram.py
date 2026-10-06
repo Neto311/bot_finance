@@ -292,6 +292,9 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             mensagem_sucesso = formatar_mensagem(dados)
             await update.message.reply_text(mensagem_sucesso)
 
+        elif response.status_code == 409:
+            await update.message.reply_text("Antes de registrar um gasto, envie /start e escolha onde salvar seus dados")
+
         else:
             await update.message.reply_text("Erro ao salvar no banco")
 
@@ -343,6 +346,8 @@ async def responder_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             dados = response.json()
             mensagem_sucesso = formatar_mensagem(dados)
             await update.message.reply_text(mensagem_sucesso)
+        elif response.status_code == 409:
+            await update.message.reply_text("Antes de registrar um gasto, envie /start e escolha onde salvar seus dados.")
         else:
             await update.message.reply_text("Erro ao salvar no banco")
 
