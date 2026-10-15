@@ -128,4 +128,3 @@ async def inicializar_sessao_mcp(client, headers):
         'headers_sessao': headers_sessao,
         'session_id_presente': bool(session_id)
     }
-

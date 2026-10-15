@@ -17,6 +17,7 @@ class Financa(Base):
     data = Column(DateTime, default=datetime.now)
     referencia_externa = Column(String, nullable=True, index=True)
     numero_usuario = Column(Integer, nullable=False)
+    origem = Column(String, nullable=True)
 
 
 class Usuario(Base):

@@ -1,7 +1,8 @@
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, date, time
 from math import isfinite
+from calendar import monthrange
 
 from fastapi import (
     APIRouter,
@@ -12,6 +13,7 @@ from fastapi import (
     HTTPException,
     Path,
     UploadFile,
+    Query,
 )
 from sqlalchemy import extract
 from sqlalchemy.orm import Session
@@ -145,7 +147,8 @@ def salvar_financa(db: Session, usuario_id: int, dados: dict, referencia_externa
         tipo = dados['tipo'],
         data = dados["data"],
         numero_usuario = usuario.proximo_numero_transacao,
-        referencia_externa=referencia_externa)
+        referencia_externa=referencia_externa,
+        origem="minhas_economias" if referencia_externa else "local",)
 
     usuario.proximo_numero_transacao += 1
 
@@ -364,3 +367,155 @@ def resumo(
         "gasto_total": gasto_total,
         "categorias": categorias
     }
+
+@router.get("/financas/ultimas")
+async def obter_ultimas_transacoes(
+    quantidade: int = Query(default=10, ge=1, le=50),
+    usuario_id: int = Depends(obter_usuario_id_atual)
+):
+    
+    servico = await obter_finance_service(usuario_id)
+
+    if isinstance(servico, dict) and servico.get("erro"):
+        raise HTTPException(status_code=503, detail=servico["erro"])
+
+    resultado = await servico.listar_transacoes({'size': quantidade, 'sortDirection': 'DESC'})
+
+    if not isinstance(resultado, dict):
+        raise HTTPException(status_code=502, detail='Resposta inesperada do Minhas Economias')
+
+    if resultado.get('erro'):
+        raise HTTPException(status_code=502, detail='o serviço MCP devolveu um erro ao fazer um get nas transações')
+
+    return {
+        'transactions': resultado.get('transactions', []),
+        'hasMore': resultado.get('hasMore', False),
+        'nextCursor': resultado.get('nextCursor'),
+    }
+
+@router.get("/financas/mes/minhas-economias")
+async def obter_transacoes_mes(
+    mes: int = Query(ge=1, le=12),
+    ano: int = Query(ge=1, le=9999),
+    usuario_id: int = Depends(obter_usuario_id_atual),
+    cursor: str | None = Query(default=None, max_length=2048),
+):
+
+    data_inicio = f'{ano:04d}-{mes:02d}-01'
+
+    data_fim = f'{ano:04d}-{mes:02d}-{monthrange(ano, mes)[1]}'
+
+    servico = await obter_finance_service(usuario_id)
+
+    if isinstance(servico, dict) and servico.get("erro"):
+        raise HTTPException(status_code=503, detail=servico["erro"])
+
+    filtros = {
+        'fromDate': data_inicio, 'toDate': data_fim, 'size': 50, 'sortDirection': 'DESC'
+    }
+
+    if cursor:
+        filtros['cursor'] = cursor
+
+    resultado = await servico.listar_transacoes(filtros)
+
+    if not isinstance(resultado, dict):
+        raise HTTPException(status_code=502, detail='Resposta inesperada do Minhas Economias')
+
+    if resultado.get('erro'):
+        raise HTTPException(status_code=502, detail='o serviço MCP devolveu um erro ao fazer um get nas transações')
+
+    return {
+        'transactions': resultado.get('transactions', []),
+        'hasMore': resultado.get('hasMore', False),
+        'nextCursor': resultado.get('nextCursor'),
+    }
+
+@router.get('/financas/personalizado/minhas-economias')
+async def obter_financa_personalizado(
+    data_inicio:date,
+    data_fim: date,
+    usuario_id: int = Depends(obter_usuario_id_atual),
+    cursor: str | None = Query(default=None, max_length=2048),
+):
+
+    if data_inicio > data_fim:
+        raise HTTPException(status_code=422, detail='data_incio deve ser anterior ou igual a data_fim')
+    
+    servico = await obter_finance_service(usuario_id)
+
+    if isinstance(servico, dict) and servico.get("erro"):
+        raise HTTPException(status_code=503, detail=servico["erro"])
+
+    filtros = {
+        'fromDate': data_inicio.isoformat(), 'toDate': data_fim.isoformat(), 'size': 50, 'sortDirection': 'DESC'
+    }
+
+    if cursor:
+        filtros['cursor'] = cursor
+
+    resultado = await servico.listar_transacoes(filtros)
+
+    if not isinstance(resultado, dict):
+        raise HTTPException(status_code=502, detail='Resposta inesperada do Minhas Economias')
+
+    if resultado.get('erro'):
+        raise HTTPException(status_code=502, detail='o serviço MCP devolveu um erro ao fazer um get nas transações')
+
+    return {
+        'transactions': resultado.get('transactions', []),
+        'hasMore': resultado.get('hasMore', False),
+        'nextCursor': resultado.get('nextCursor'),
+    }
+
+@router.get('/financas/ultimas/local')
+def obter_ultimas_transacoes_locais(
+    quantidade: int = Query(default=10, ge=1, le=50),
+    usuario_id: int = Depends(obter_usuario_id_atual),
+    db: Session = Depends(get_db),
+):
+    
+    consulta = db.query(model.Financa).filter(model.Financa.usuario_id == usuario_id, model.Financa.origem == 'local').order_by(model.Financa.numero_usuario.desc())
+
+    transacoes = consulta.limit(quantidade).all()
+
+    return transacoes
+
+
+@router.get('/financas/mes/local')
+def obter_transacoes_mes_local(
+    mes: int = Query(ge=1, le=12),
+    ano: int = Query(ge=1, le=9999),
+    usuario_id: int = Depends(obter_usuario_id_atual),
+    db: Session=Depends(get_db)
+):
+    consulta = db.query(model.Financa).filter(
+        model.Financa.usuario_id == usuario_id, 
+        model.Financa.origem == 'local', 
+        extract('month', model.Financa.data) == mes, 
+        extract('year', model.Financa.data) == ano).order_by(model.Financa.numero_usuario.desc()).all()
+
+    return consulta
+
+
+@router.get('/financas/personalizado/local')
+def obter_transacoes_personalizado_local(
+    data_inicio: date,
+    data_fim: date,
+    usuario_id: int = Depends(obter_usuario_id_atual),
+    db: Session=Depends(get_db)
+):
+
+    if data_inicio > data_fim:
+        raise HTTPException(status_code=422, detail="Data inicial posterior à data final")
+
+    inicio = datetime.combine(data_inicio, time.min)
+    fim = datetime.combine(data_fim, time.max)
+
+    consulta = db.query(model.Financa).filter(
+        model.Financa.usuario_id == usuario_id, 
+        model.Financa.origem == 'local',
+        model.Financa.data >= inicio,
+        model.Financa.data <= fim,).order_by(model.Financa.numero_usuario.desc()).all()
+
+    return consulta
