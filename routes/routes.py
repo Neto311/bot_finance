@@ -3,6 +3,7 @@ import tempfile
 from datetime import datetime, date, time
 from math import isfinite
 from calendar import monthrange
+from zoneinfo import ZoneInfo
 
 from fastapi import (
     APIRouter,
@@ -371,7 +372,7 @@ def resumo(
 @router.get("/financas/ultimas")
 async def obter_ultimas_transacoes(
     quantidade: int = Query(default=10, ge=1, le=50),
-    usuario_id: int = Depends(obter_usuario_id_atual)
+    usuario_id: int = Depends(obter_usuario_id_atual),
 ):
     
     servico = await obter_finance_service(usuario_id)
@@ -379,7 +380,9 @@ async def obter_ultimas_transacoes(
     if isinstance(servico, dict) and servico.get("erro"):
         raise HTTPException(status_code=503, detail=servico["erro"])
 
-    resultado = await servico.listar_transacoes({'size': quantidade, 'sortDirection': 'DESC'})
+    hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date().isoformat()
+
+    resultado = await servico.listar_transacoes({"toDate": hoje,'size': quantidade, 'sortDirection': 'DESC'})
 
     if not isinstance(resultado, dict):
         raise HTTPException(status_code=502, detail='Resposta inesperada do Minhas Economias')

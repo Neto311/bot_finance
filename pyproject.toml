@@ -17,7 +17,8 @@ dependencies = [
     "psycopg2-binary (>=2.9.12,<3.0.0)",
     "twilio (>=9.10.9,<10.0.0)",
     "alembic (>=1.16,<2.0)",
-    "cryptography (>=50.0.1,<51.0.0)"
+    "cryptography (>=50.0.1,<51.0.0)",
+    "tzdata (>=2026.5,<2027.0)"
 ]
 
 [tool.poetry]
