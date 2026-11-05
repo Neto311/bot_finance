@@ -21,6 +21,7 @@ from telegram.ext import (
     ContextTypes,
     MessageHandler,
     filters,
+    CallbackQueryHandler,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,17 +57,19 @@ def formatar_mensagem(dados):
 
 async def montar_headers(update: Update):
     usuario = update.effective_user
+    mensagem = update.effective_message
 
     if not usuario:
-        if update.message:
-            await update.message.reply_text(
+        if mensagem:
+            await mensagem.reply_text(
                 'Erro: usuário não identificado'
             )
         return None
 
     if not INTERNAL_API_KEY:
         logger.critical("Erro crítico na INTERNAL_API_KEY")
-        await update.message.reply_text("Serviço temporariamente indisponível")
+        if mensagem:
+            await mensagem.reply_text("Serviço temporariamente indisponível")
         return None
 
     return{
@@ -98,6 +101,66 @@ def montar_teclado_integracoes():
 def formatar_valor_brl(valor):
     numero = f"{float(valor):,.2f}"
     return "R$ " + numero.replace(",", "_").replace(".", ",").replace("_", ".")
+
+def montar_blocos_transacoes_mes(dados, provedor):
+    campo_data = "date" if provedor =="minhas_economias" else "data"
+    dados_sorted = sorted(dados, key=lambda item:str(item[campo_data])[:10], reverse=True)
+
+    linhas = []
+    
+    dia_anterior = None
+
+    for dado in dados_sorted:
+        dia = str(dado[campo_data])[:10]
+
+        if dia != dia_anterior:
+            linhas.append("")
+            linhas.append(date.fromisoformat(dia).strftime("%d/%m"))
+            dia_anterior = dia
+
+        if provedor == "local":
+            linha = (
+                f"#{dado["numero_usuario"]} {dado['descricao']} — "
+                f"{formatar_valor_brl(dado['valor'])} · {dado['categoria']}"
+            )
+
+        elif provedor == 'minhas_economias':
+            categoria = dado.get("category") or {}
+            nome_categoria = categoria.get("categoryName", "Sem categoria")
+
+            linha = (
+                f"• {dado['description']} — "
+                f"{formatar_valor_brl(dado['value'])} · {nome_categoria}"
+                )
+            
+        else:
+            continue
+
+
+        linhas.append(linha)
+
+    blocos = []
+    bloco = ""
+
+    for linha in linhas:
+        if len(linha) > 4000:
+            linha = linha[:3997] + "..."
+
+        proximo_bloco = f"{bloco}\n{linha}" if bloco else linha
+
+        if len(proximo_bloco) > 4000:
+            blocos.append(bloco)
+            bloco = linha
+
+        else:
+            bloco = proximo_bloco
+
+    if bloco:
+        blocos.append(bloco)
+
+    return blocos
+    
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
@@ -660,54 +723,12 @@ async def ver_transacao_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     await update.message.reply_text("Nenhuma transação encontrada nesse mês")
                     return
 
-                campo_data = "date" if provedor =="minhas_economias" else "data"
-                dados.sort(key=lambda item:str(item[campo_data])[:10], reverse=True)
+                blocos = montar_blocos_transacoes_mes(dados, provedor)
 
-                linhas = []
-
-                dia_anterior = None
-
-                for dado in dados:
-                    dia = str(dado[campo_data])[:10]
-
-                    if dia != dia_anterior:
-                        linhas.append("")
-                        linhas.append(date.fromisoformat(dia).strftime("%d/%m"))
-                        dia_anterior = dia
-
-                    if provedor == "local":
-                        linha = (
-                            f"#{dado["numero_usuario"]} {dado['descricao']} — "
-                            f"{formatar_valor_brl(dado['valor'])} · {dado['categoria']}"
-                        )
-
-                    elif provedor == 'minhas_economias':
-                        categoria = dado.get("category") or {}
-                        nome_categoria = categoria.get("categoryName", "Sem categoria")
-
-                        linha = (
-                            f"• {dado['description']} — "
-                            f"{formatar_valor_brl(dado['value'])} · {nome_categoria}"
-                            )
-
-                    linhas.append(linha)
-
-                bloco = ""
-
-                for linha in linhas:
-                    if len(linha) > 4000:
-                        linha = linha[:3997] + "..."
-
-                    proximo_bloco = f"{bloco}\n{linha}" if bloco else linha
-
-                    if len(proximo_bloco) > 4000:
+                if blocos:
+                    for bloco in blocos[:-1]:
                         await update.message.reply_text(bloco)
-                        bloco = linha
 
-                    else:
-                        bloco = proximo_bloco
-
-                if bloco:
                     pagina = context.user_data.get("pagina_mes_me")
 
                     teclado = (
@@ -718,7 +739,10 @@ async def ver_transacao_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         if provedor == 'minhas_economias' and pagina else None
                     )
 
-                    await update.message.reply_text(bloco, reply_markup=teclado)
+                    mensagem_final = await update.message.reply_text(blocos[-1], reply_markup=teclado)
+
+                    if provedor == "minhas_economias" and pagina:
+                        pagina["message_id"] = mensagem_final.message_id
 
             else:
                 await update.message.reply_text(f"Erro da API: {response.text}")
@@ -871,8 +895,90 @@ async def desconectar_minhas_economias(update: Update, context: ContextTypes.DEF
         logger.exception("Dados inválidos recebidos pelo bot")
         await update.message.reply_text("Os dados informados são inválidos.")
 
+async def ver_mais_mes_minhas_economias(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
 
+    if not query or not query.message:
+        return
 
+    pagina = context.user_data.get("pagina_mes_me")
+
+    if not pagina or pagina.get("message_id") != query.message.message_id:
+        await query.answer("Esta página já foi carregada ou expirou.")
+        return
+
+    if pagina.get("carregando"):
+        await query.answer("Carregando...")
+        return
+
+    pagina["carregando"] = True
+    await query.answer()
+
+    headers = await montar_headers(update)
+
+    if not headers:
+        pagina["carregando"] = False
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+            response = await client.get(F"{API_URL}/financas/mes/minhas-economias", params={"mes": pagina["mes"], "ano": pagina["ano"], "cursor": pagina["cursor"]}, headers=headers)
+        
+            if response.status_code == 200:
+                await query.edit_message_reply_markup(reply_markup=None)
+
+                resposta = response.json()
+                dados = resposta.get("transactions", [])
+                proximo_cursor = resposta.get("nextCursor")
+
+                if not dados:
+                    context.user_data.pop("pagina_mes_me", None)
+                    await query.message.reply_text("Não há mais transações neste mês")
+                    return
+
+                blocos = montar_blocos_transacoes_mes(dados, "minhas_economias")
+
+                if blocos:
+                    for bloco in blocos[:-1]:
+                        await query.message.reply_text(bloco)
+
+                    tem_mais = bool(resposta.get("hasMore") and proximo_cursor)
+                    teclado = (
+                        InlineKeyboardMarkup([
+                            [InlineKeyboardButton("Ver mais ➡️", callback_data="mes_me_ver_mais")]
+                        ])
+                        if tem_mais else None
+                    )
+
+                    mensagem_final = await query.message.reply_text(blocos[-1], reply_markup=teclado)
+
+                    if tem_mais:
+                        context.user_data["pagina_mes_me"] = {
+                            "mes": pagina["mes"],
+                            "ano": pagina["ano"],
+                            "cursor": proximo_cursor,
+                            "message_id": mensagem_final.message_id,
+                        }
+                    else:
+                        context.user_data.pop("pagina_mes_me", None)
+
+            else:
+                pagina["carregando"] = False
+                await query.message.reply_text(f"Erro da API: {response.text}")
+
+    except httpx.TimeoutException:
+        pagina["carregando"] = False
+        await query.message.reply_text("A API demorou para responder.")
+
+    except httpx.RequestError:
+        pagina["carregando"] = False
+        logger.exception("Falha de comunicação com a API")
+        await query.message.reply_text("Não foi possível comunicar com a API.")
+
+    except (ValueError, TypeError):
+        pagina["carregando"] = False
+        logger.exception("Dados inválidos recebidos pelo bot")
+        await query.message.reply_text("Os dados informados são inválidos.")
 
 
 app.add_handler(CommandHandler("start", start))
@@ -888,6 +994,8 @@ app.add_handler(CommandHandler("resumo", resumo))
 app.add_handler(CommandHandler("meuid",meu_id))
 app.add_handler(CommandHandler("conectar_minhas_economias", conectar_minhas_economias))
 app.add_handler(CommandHandler("desconectar_minhas_economias", desconectar_minhas_economias))
+app.add_handler(CallbackQueryHandler(ver_mais_mes_minhas_economias, pattern="^mes_me_ver_mais$"))
+
 
 
 
@@ -895,6 +1003,7 @@ if __name__ == '__main__':
     print("🤖 Iniciando Bot do Telegram...")
     app.run_polling()
 
+    
 
 
 
