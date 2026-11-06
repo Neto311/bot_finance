@@ -4,6 +4,7 @@ import os
 import tempfile
 from os import getenv
 from pathlib import Path
+from datetime import date
 
 import httpx
 from dotenv import load_dotenv
@@ -20,6 +21,7 @@ from telegram.ext import (
     ContextTypes,
     MessageHandler,
     filters,
+    CallbackQueryHandler,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,17 +57,19 @@ def formatar_mensagem(dados):
 
 async def montar_headers(update: Update):
     usuario = update.effective_user
+    mensagem = update.effective_message
 
     if not usuario:
-        if update.message:
-            await update.message.reply_text(
+        if mensagem:
+            await mensagem.reply_text(
                 'Erro: usuário não identificado'
             )
         return None
 
     if not INTERNAL_API_KEY:
         logger.critical("Erro crítico na INTERNAL_API_KEY")
-        await update.message.reply_text("Serviço temporariamente indisponível")
+        if mensagem:
+            await mensagem.reply_text("Serviço temporariamente indisponível")
         return None
 
     return{
@@ -94,6 +98,70 @@ def montar_teclado_integracoes():
         ]
     return ReplyKeyboardMarkup(teclado, resize_keyboard=True, one_time_keyboard=False)
 
+def formatar_valor_brl(valor):
+    numero = f"{float(valor):,.2f}"
+    return "R$ " + numero.replace(",", "_").replace(".", ",").replace("_", ".")
+
+def montar_blocos_transacoes_mes(dados, provedor):
+    campo_data = "date" if provedor =="minhas_economias" else "data"
+    dados_sorted = sorted(dados, key=lambda item:str(item[campo_data])[:10], reverse=True)
+
+    linhas = []
+    
+    dia_anterior = None
+
+    for dado in dados_sorted:
+        dia = str(dado[campo_data])[:10]
+
+        if dia != dia_anterior:
+            linhas.append("")
+            linhas.append(date.fromisoformat(dia).strftime("%d/%m"))
+            dia_anterior = dia
+
+        if provedor == "local":
+            linha = (
+                f"#{dado["numero_usuario"]} {dado['descricao']} — "
+                f"{formatar_valor_brl(dado['valor'])} · {dado['categoria']}"
+            )
+
+        elif provedor == 'minhas_economias':
+            categoria = dado.get("category") or {}
+            nome_categoria = categoria.get("categoryName", "Sem categoria")
+
+            linha = (
+                f"• {dado['description']} — "
+                f"{formatar_valor_brl(dado['value'])} · {nome_categoria}"
+                )
+            
+        else:
+            continue
+
+
+        linhas.append(linha)
+
+    blocos = []
+    bloco = ""
+
+    for linha in linhas:
+        if len(linha) > 4000:
+            linha = linha[:3997] + "..."
+
+        proximo_bloco = f"{bloco}\n{linha}" if bloco else linha
+
+        if len(proximo_bloco) > 4000:
+            blocos.append(bloco)
+            bloco = linha
+
+        else:
+            bloco = proximo_bloco
+
+    if bloco:
+        blocos.append(bloco)
+
+    return blocos
+    
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
@@ -101,7 +169,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not usuario or not update.message:
             return
-        
+
         headers = await montar_headers(update)
 
         if not headers:
@@ -160,13 +228,13 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if mensagem == "⚙️ Alterar integração":
         await update.message.reply_text("Escolha a integração que deseja usar", reply_markup=montar_teclado_integracoes())
-        return 
-    
+        return
+
     if mensagem== "Usar banco local":
         headers = await montar_headers(update)
 
         if not headers:
-            return 
+            return
 
         provedor = {'provedor': "local"}
 
@@ -370,19 +438,58 @@ async def ver_itens(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            response = await client.get(f'{API_URL}/financas', headers=headers)
+            provedor_pedido = await client.get(f'{API_URL}/usuarios/integracao-principal', headers=headers)
+
+            if provedor_pedido.status_code != 200:
+                await update.message.reply_text("Não consegui identificar sua integração")
+                return
+
+            provedor = provedor_pedido.json().get("provedor")
+
+            if provedor == 'local':
+                caminho = '/financas/ultimas/local'
+            elif provedor == 'minhas_economias':
+                caminho = '/financas/ultimas'
+            else:
+                await update.message.reply_text("Escolha uma integração antes de ver os gastos.")
+                return
+            
+            response = await client.get(f'{API_URL}{caminho}', params={"quantidade": 10}, headers=headers)
 
         if response.status_code == 200:
-            dados = response.json()
+            resposta = response.json()
+
+            if provedor =='minhas_economias':
+                dados = resposta.get("transactions", [])
+            else:
+                dados = resposta
+
+            if not dados:
+                await update.message.reply_text("Nenhuma transação encontrada")
+                return
+
             for dado in dados:
-                data = (
-                    f"ID: {dado["numero_usuario"]}\n"
-                    f"Valor: R$ {float(dado["valor"]):.2f}\n"
-                    f"Categoria: {dado["categoria"]}\n"
-                    f"Descrição: {dado["descricao"]}\n"
-                    f"Tipo: {dado["tipo"]}\n"
-                    f"Data: {dado["data"]}"
-                )
+                if provedor =='local':
+                    data = (
+                        f"ID: {dado["numero_usuario"]}\n"
+                        f"Valor: R$ {float(dado["valor"]):.2f}\n"
+                        f"Categoria: {dado["categoria"]}\n"
+                        f"Descrição: {dado["descricao"]}\n"
+                        f"Tipo: {dado["tipo"]}\n"
+                        f"Data: {dado["data"]}"
+                    )
+                    
+                elif provedor == "minhas_economias":
+                    categoria = dado.get("category") or {}
+                    nome_categoria = categoria.get("categoryName", "Sem categoria")
+
+                    data = (
+                        f"Valor: R$ {float(dado['value']):.2f}\n"
+                        f"Categoria: {nome_categoria}\n"
+                        f"Descrição: {dado['description']}\n"
+                        f"Tipo: {dado['type']}\n"
+                        f"Data: {dado['date']}"
+                    )
                 await update.message.reply_text(data)
         else:
             await update.message.reply_text(f"Erro da API: {response.text}")
@@ -565,6 +672,7 @@ async def ver_transacao_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
     mes = partes[0]
     ano = partes[1]
 
+
     headers = await montar_headers(update)
 
     if not headers:
@@ -572,22 +680,73 @@ async def ver_transacao_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     try:
         async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-            response = await client.get(f'{API_URL}/financas/data?mes={mes}&ano={ano}', headers=headers)
+            provedor_pedido = await client.get(f'{API_URL}/usuarios/integracao-principal', headers=headers)
+
+            if provedor_pedido.status_code != 200:
+                await update.message.reply_text("Não consegui identificar sua integração")
+                return
+
+            provedor = provedor_pedido.json().get("provedor")
+
+            if provedor == 'local':
+                caminho = '/financas/mes/local'
+            elif provedor == 'minhas_economias':
+                caminho = '/financas/mes/minhas-economias'
+            else:
+                await update.message.reply_text("Escolha uma integração antes de ver os gastos.")
+                return
+
+            response = await client.get(f'{API_URL}{caminho}', params={"mes": mes, "ano": ano}, headers=headers)
 
             if response.status_code == 200:
-                dados = response.json()
-                for dado in dados:
-                    data = (
-                        f"ID: {dado["numero_usuario"]}"
-                        f"Valor: {dado["valor"]}"
-                        f"Categoria: {dado["categoria"]}"
-                        f"Descrição: {dado["descricao"]}"
-                        f"Tipo: {dado["tipo"]}"
-                        f"Data: {dado["data"]}"
+                resposta = response.json()
+
+                if provedor == 'minhas_economias':
+                    dados = resposta.get("transactions", [])
+
+                    proximo_cursor = resposta.get("nextCursor")
+
+                    if resposta.get("hasMore") and proximo_cursor:
+                        context.user_data["pagina_mes_me"] = {
+                            "mes": mes,
+                            "ano": ano,
+                            "cursor": proximo_cursor
+                        }
+
+                    else:
+                        context.user_data.pop("pagina_mes_me", None)
+
+                else:
+                    dados = resposta
+
+                if not dados:
+                    await update.message.reply_text("Nenhuma transação encontrada nesse mês")
+                    return
+
+                blocos = montar_blocos_transacoes_mes(dados, provedor)
+
+                if blocos:
+                    for bloco in blocos[:-1]:
+                        await update.message.reply_text(bloco)
+
+                    pagina = context.user_data.get("pagina_mes_me")
+
+                    teclado = (
+                        InlineKeyboardMarkup([
+                            [InlineKeyboardButton("Ver mais ➡️", callback_data="mes_me_ver_mais")]
+                        ])
+
+                        if provedor == 'minhas_economias' and pagina else None
                     )
-                    await update.message.reply_text(data)
+
+                    mensagem_final = await update.message.reply_text(blocos[-1], reply_markup=teclado)
+
+                    if provedor == "minhas_economias" and pagina:
+                        pagina["message_id"] = mensagem_final.message_id
+
             else:
                 await update.message.reply_text(f"Erro da API: {response.text}")
+
     except httpx.TimeoutException:
         await update.message.reply_text("A API demorou para responder.")
 
@@ -633,6 +792,7 @@ async def resumo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(texto, parse_mode='Markdown')
             else:
                 await update.message.reply_text(f"Erro da API: {response.text}")
+
     except httpx.TimeoutException:
         await update.message.reply_text("A API demorou para responder.")
 
@@ -715,7 +875,7 @@ async def desconectar_minhas_economias(update: Update, context: ContextTypes.DEF
             token_removido = dados.get("token_removido")
             if token_removido:
                await update.message.reply_text(" Minhas Economias Desconectado ")
-            else: 
+            else:
                 await update.message.reply_text(" Sua conta já estava desconectada ")
 
         elif response.status_code == 403:
@@ -735,6 +895,90 @@ async def desconectar_minhas_economias(update: Update, context: ContextTypes.DEF
         logger.exception("Dados inválidos recebidos pelo bot")
         await update.message.reply_text("Os dados informados são inválidos.")
 
+async def ver_mais_mes_minhas_economias(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+
+    if not query or not query.message:
+        return
+
+    pagina = context.user_data.get("pagina_mes_me")
+
+    if not pagina or pagina.get("message_id") != query.message.message_id:
+        await query.answer("Esta página já foi carregada ou expirou.")
+        return
+
+    if pagina.get("carregando"):
+        await query.answer("Carregando...")
+        return
+
+    pagina["carregando"] = True
+    await query.answer()
+
+    headers = await montar_headers(update)
+
+    if not headers:
+        pagina["carregando"] = False
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+            response = await client.get(F"{API_URL}/financas/mes/minhas-economias", params={"mes": pagina["mes"], "ano": pagina["ano"], "cursor": pagina["cursor"]}, headers=headers)
+        
+            if response.status_code == 200:
+                await query.edit_message_reply_markup(reply_markup=None)
+
+                resposta = response.json()
+                dados = resposta.get("transactions", [])
+                proximo_cursor = resposta.get("nextCursor")
+
+                if not dados:
+                    context.user_data.pop("pagina_mes_me", None)
+                    await query.message.reply_text("Não há mais transações neste mês")
+                    return
+
+                blocos = montar_blocos_transacoes_mes(dados, "minhas_economias")
+
+                if blocos:
+                    for bloco in blocos[:-1]:
+                        await query.message.reply_text(bloco)
+
+                    tem_mais = bool(resposta.get("hasMore") and proximo_cursor)
+                    teclado = (
+                        InlineKeyboardMarkup([
+                            [InlineKeyboardButton("Ver mais ➡️", callback_data="mes_me_ver_mais")]
+                        ])
+                        if tem_mais else None
+                    )
+
+                    mensagem_final = await query.message.reply_text(blocos[-1], reply_markup=teclado)
+
+                    if tem_mais:
+                        context.user_data["pagina_mes_me"] = {
+                            "mes": pagina["mes"],
+                            "ano": pagina["ano"],
+                            "cursor": proximo_cursor,
+                            "message_id": mensagem_final.message_id,
+                        }
+                    else:
+                        context.user_data.pop("pagina_mes_me", None)
+
+            else:
+                pagina["carregando"] = False
+                await query.message.reply_text(f"Erro da API: {response.text}")
+
+    except httpx.TimeoutException:
+        pagina["carregando"] = False
+        await query.message.reply_text("A API demorou para responder.")
+
+    except httpx.RequestError:
+        pagina["carregando"] = False
+        logger.exception("Falha de comunicação com a API")
+        await query.message.reply_text("Não foi possível comunicar com a API.")
+
+    except (ValueError, TypeError):
+        pagina["carregando"] = False
+        logger.exception("Dados inválidos recebidos pelo bot")
+        await query.message.reply_text("Os dados informados são inválidos.")
 
 
 app.add_handler(CommandHandler("start", start))
@@ -750,12 +994,16 @@ app.add_handler(CommandHandler("resumo", resumo))
 app.add_handler(CommandHandler("meuid",meu_id))
 app.add_handler(CommandHandler("conectar_minhas_economias", conectar_minhas_economias))
 app.add_handler(CommandHandler("desconectar_minhas_economias", desconectar_minhas_economias))
+app.add_handler(CallbackQueryHandler(ver_mais_mes_minhas_economias, pattern="^mes_me_ver_mais$"))
+
 
 
 
 if __name__ == '__main__':
     print("🤖 Iniciando Bot do Telegram...")
     app.run_polling()
+
+    
 
 
 
