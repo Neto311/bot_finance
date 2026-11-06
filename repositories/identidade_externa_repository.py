@@ -47,6 +47,7 @@ def obter_ou_criar_usuario(provedor, identificador_externo, nome):
         if not usuario:
             usuario = Usuario(
                 nome = nome_normalizado,
+                email = f"{provedor_normalizado}_{identificador_normalizado}@legado.local",
                 ativo = True,
                 saldo = 0.0,
                 proximo_numero_transacao = 1,
