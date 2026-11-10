@@ -7,6 +7,7 @@ from database import Base, DATABASE_URL
 from models.financas import Financa, Usuario  # noqa: F401
 from models.minhas_economias_token import MinhasEconomiasToken  # noqa: F401
 from models.integracao_usuario import IntegracaoUsuario  # noqa: F401
+from models.chat import MensagemChat # noqa: F401
 
 config = context.config
 
