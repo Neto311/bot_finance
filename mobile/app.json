@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Bot Finança",
+    "slug": "bot-financa",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "botfinanca",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Permita o acesso ao microfone para registrar gastos por voz."
+      }
+    },
+    "android": {
+      "package": "com.neto311.botfinanca",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-audio"
+    ]
+  }
+}
