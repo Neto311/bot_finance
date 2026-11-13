@@ -13,3 +13,11 @@ bot-finance-neto.duckdns.org {
 api.usefinanceai.com.br {
     reverse_proxy api:8000
 }
+
+app.usefinanceai.com.br {
+    root * /srv/pwa
+    encode gzip
+    try_files {path} /index.html
+    file_server
+}
+
