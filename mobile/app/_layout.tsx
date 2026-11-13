@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { Slot, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { AuthProvider, useAuth } from "../src/context/AuthContext";
+import { CORES } from "../src/theme/colors";
 
 function GuardiaoNavegacao() {
   const { usuario, carregando } = useAuth();
@@ -13,7 +14,10 @@ function GuardiaoNavegacao() {
     if (carregando) return;
 
     const rotaAtual = segmentos[0];
-    const emTelaPublica = rotaAtual === "login" || rotaAtual === "registro";
+    const emTelaPublica =
+      rotaAtual === "login" ||
+      rotaAtual === "registro" ||
+      rotaAtual === "esqueci-senha";
 
     if (!usuario && !emTelaPublica) {
       router.replace("/login");
@@ -25,7 +29,7 @@ function GuardiaoNavegacao() {
   if (carregando) {
     return (
       <View style={estilos.carregandoContainer}>
-        <ActivityIndicator size="large" color="#10b981" />
+        <ActivityIndicator size="large" color={CORES.verde} />
       </View>
     );
   }
@@ -45,7 +49,7 @@ export default function RootLayout() {
 const estilos = StyleSheet.create({
   carregandoContainer: {
     flex: 1,
-    backgroundColor: "#0b141a",
+    backgroundColor: CORES.marinho,
     alignItems: "center",
     justifyContent: "center",
   },

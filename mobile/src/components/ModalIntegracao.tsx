@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { apiFinancas } from "../services/api";
+import { CORES } from "../theme/colors";
 
 interface Props {
   visivel: boolean;
@@ -34,7 +35,7 @@ export function ModalIntegracao({
       await onAtualizado();
       onFechar();
     } catch (e: any) {
-      setErro(e?.message || "Não foi possível alterar a integração.");
+      setErro(e?.message || "Erro ao alterar sincronização.");
     } finally {
       setSalvando(false);
     }
@@ -43,76 +44,54 @@ export function ModalIntegracao({
   const ativo = provedorAtual || "local";
 
   return (
-    <Modal visible={visivel} transparent animationType="fade">
-      <View style={estilos.overlay}>
-        <View style={estilos.modalCard}>
-          <Text style={estilos.titulo}>Modo de Armazenamento</Text>
-          <Text style={estilos.subtitulo}>
-            Escolha onde seus novos gastos serão registrados por padrão:
-          </Text>
+    <Modal visible={visivel} transparent animationType="slide">
+      <Pressable style={estilos.overlay} onPress={onFechar}>
+        <Pressable style={estilos.sheet} onPress={(e) => e.stopPropagation()}>
+          <View style={estilos.barraArraste} />
+          <Text style={estilos.titulo}>Sincronização</Text>
 
           {erro ? <Text style={estilos.erro}>{erro}</Text> : null}
 
           <Pressable
-            style={[
-              estilos.opcaoCard,
-              ativo === "local" && estilos.opcaoSelecionada,
-            ]}
+            style={estilos.opcaoRow}
             onPress={() => selecionar("local")}
             disabled={salvando}
           >
-            <Ionicons
-              name="phone-portrait-outline"
-              size={24}
-              color={ativo === "local" ? "#10b981" : "#94a3b8"}
-            />
             <View style={{ flex: 1 }}>
-              <Text style={estilos.opcaoTitulo}>Armazenamento Local (Padrão)</Text>
+              <Text style={estilos.opcaoTitulo}>Nuvem FinaceAi</Text>
               <Text style={estilos.opcaoDesc}>
-                Rápido e direto no banco de dados do Bot Finança.
+                Armazenamento direto e instantâneo
               </Text>
             </View>
             {ativo === "local" ? (
-              <Ionicons name="checkmark-circle" size={22} color="#10b981" />
+              <Ionicons name="checkmark" size={22} color={CORES.verde} />
             ) : null}
           </Pressable>
 
           <Pressable
-            style={[
-              estilos.opcaoCard,
-              ativo === "minhas_economias" && estilos.opcaoSelecionada,
-            ]}
+            style={estilos.opcaoRow}
             onPress={() => selecionar("minhas_economias")}
             disabled={salvando}
           >
-            <Ionicons
-              name="cloud-done-outline"
-              size={24}
-              color={ativo === "minhas_economias" ? "#10b981" : "#94a3b8"}
-            />
             <View style={{ flex: 1 }}>
               <Text style={estilos.opcaoTitulo}>Minhas Economias</Text>
               <Text style={estilos.opcaoDesc}>
-                Sincroniza automaticamente seus gastos com sua conta Minhas Economias.
+                Sincronizar com conta externa
               </Text>
             </View>
             {ativo === "minhas_economias" ? (
-              <Ionicons name="checkmark-circle" size={22} color="#10b981" />
+              <Ionicons name="checkmark" size={22} color={CORES.verde} />
             ) : null}
           </Pressable>
 
           {salvando ? (
             <ActivityIndicator
-              color="#10b981"
-              style={{ marginVertical: 10 }}
+              color={CORES.verde}
+              style={{ marginVertical: 8 }}
             />
           ) : null}
-
-          <Pressable style={estilos.botaoFechar} onPress={onFechar}>
-            <Text style={estilos.textoFechar}>Fechar</Text>
-          </Pressable>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
@@ -120,70 +99,50 @@ export function ModalIntegracao({
 const estilos = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.65)",
-    justifyContent: "center",
-    padding: 20,
+    backgroundColor: "rgba(0, 0, 0, 0.65)",
+    justifyContent: "flex-end",
   },
-  modalCard: {
-    backgroundColor: "#111b21",
-    borderRadius: 18,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "#2a3942",
-    maxWidth: 440,
-    width: "100%",
+  sheet: {
+    backgroundColor: CORES.fundoElevado,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  barraArraste: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: CORES.bordaInput,
     alignSelf: "center",
+    marginBottom: 16,
   },
   titulo: {
-    color: "#f8fafc",
+    color: "#FFFFFF",
     fontSize: 18,
     fontWeight: "700",
-  },
-  subtitulo: {
-    color: "#94a3b8",
-    fontSize: 13,
-    marginTop: 4,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   erro: {
-    color: "#fca5a5",
+    color: CORES.perigo,
     fontSize: 13,
     marginBottom: 10,
   },
-  opcaoCard: {
+  opcaoRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: "#202c33",
-    borderWidth: 1,
-    borderColor: "#2a3942",
-    marginBottom: 10,
-  },
-  opcaoSelecionada: {
-    borderColor: "#10b981",
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    paddingVertical: 14,
+    borderBottomWidth: 0.5,
+    borderBottomColor: CORES.divisor,
   },
   opcaoTitulo: {
-    color: "#f8fafc",
-    fontSize: 14,
-    fontWeight: "700",
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
   },
   opcaoDesc: {
-    color: "#94a3b8",
-    fontSize: 12,
+    color: CORES.textoSecundario,
+    fontSize: 13,
     marginTop: 2,
-  },
-  botaoFechar: {
-    marginTop: 8,
-    paddingVertical: 11,
-    borderRadius: 10,
-    backgroundColor: "#202c33",
-    alignItems: "center",
-  },
-  textoFechar: {
-    color: "#cbd5e1",
-    fontWeight: "600",
   },
 });

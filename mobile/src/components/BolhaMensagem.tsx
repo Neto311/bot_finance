@@ -6,6 +6,7 @@ import {
   DadosTransacaoCard,
   MensagemChat,
 } from "../types/api";
+import { CORES, iconePorCategoria } from "../theme/colors";
 
 interface Props {
   mensagem: MensagemChat;
@@ -20,18 +21,6 @@ function formatarMoeda(valor: number): string {
   });
 }
 
-function formatarHora(isoString: string): string {
-  try {
-    const data = new Date(isoString);
-    return data.toLocaleTimeString("pt-BR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "";
-  }
-}
-
 export function BolhaMensagem({
   mensagem,
   onEditarTransacao,
@@ -40,244 +29,218 @@ export function BolhaMensagem({
   const ehUsuario = mensagem.remetente === "usuario";
   const extras = mensagem.dados_extras || {};
 
-  const renderizarCardTransacao = () => {
-    const transacao = extras as DadosTransacaoCard;
-    if (!transacao?.numero_usuario) {
-      return <Text style={estilos.textoMensagem}>{mensagem.conteudo}</Text>;
-    }
-
-    const excluida = Boolean((extras as any).excluida);
-
+  // Mensagem simples do usuário (estilo Instagram DM)
+  if (ehUsuario) {
     return (
-      <View style={estilos.cardInterno}>
-        <View style={estilos.cabecalhoCard}>
-          <View style={estilos.badgeCategoria}>
-            <Ionicons name="pricetag-outline" size={13} color="#10b981" />
-            <Text style={estilos.textoBadgeCategoria}>
-              {transacao.categoria || "Outros"}
-            </Text>
-          </View>
-          <Text style={estilos.idTransacao}>#{transacao.numero_usuario}</Text>
-        </View>
-
-        <Text
-          style={[
-            estilos.tituloTransacao,
-            excluida && estilos.textoRiscado,
-          ]}
-        >
-          {transacao.descricao}
-        </Text>
-
-        <Text
-          style={[
-            estilos.valorGasto,
-            excluida && estilos.textoRiscado,
-          ]}
-        >
-          - {formatarMoeda(transacao.valor)}
-        </Text>
-
-        <View style={estilos.metaLinha}>
-          <Text style={estilos.metaTexto}>📅 {transacao.data}</Text>
-          {transacao.origem ? (
-            <Text style={estilos.metaTexto}>
-              • {transacao.origem === "minhas_economias" ? "Minhas Economias" : "Local"}
-            </Text>
-          ) : null}
-        </View>
-
-        {excluida ? (
-          <Text style={estilos.avisoExcluida}>🗑️ Lançamento excluído</Text>
-        ) : (
-          <View style={estilos.acoesCard}>
-            <Pressable
-              style={estilos.botaoAcaoCard}
-              onPress={() => onEditarTransacao(transacao)}
-            >
-              <Ionicons name="create-outline" size={15} color="#cbd5e1" />
-              <Text style={estilos.textoBotaoAcao}>Editar</Text>
-            </Pressable>
-
-            <Pressable
-              style={[estilos.botaoAcaoCard, estilos.botaoExcluirCard]}
-              onPress={() => onExcluirTransacao(transacao.numero_usuario)}
-            >
-              <Ionicons name="trash-outline" size={15} color="#fca5a5" />
-              <Text style={[estilos.textoBotaoAcao, { color: "#fca5a5" }]}>
-                Excluir
+      <View style={[estilos.linha, estilos.linhaDireita]}>
+        <View style={estilos.bolhaUsuario}>
+          {mensagem.tipo === "audio" ? (
+            <View style={estilos.tagAudio}>
+              <Ionicons name="mic" size={13} color="#04131E" />
+              <Text style={estilos.textoTagAudio}>
+                Voz{extras.duracao_segundos ? ` • ${extras.duracao_segundos}s` : ""}
               </Text>
-            </Pressable>
-          </View>
-        )}
+            </View>
+          ) : null}
+          <Text style={estilos.textoUsuario}>{mensagem.conteudo}</Text>
+        </View>
       </View>
     );
-  };
+  }
 
-  const renderizarCardSaldo = () => {
+  // Card de Transação minimalista (estilo Apple Pay / Revolut)
+  if (mensagem.tipo === "card_transacao" && extras.numero_usuario) {
+    const transacao = extras as DadosTransacaoCard;
+    const excluida = Boolean((extras as any).excluida);
+    const ehGanho = transacao.tipo === "GANHO";
+
+    return (
+      <View style={[estilos.linha, estilos.linhaEsquerda]}>
+        <View style={estilos.cardRecibo}>
+          <View style={estilos.topoRecibo}>
+            <View style={estilos.circuloIcone}>
+              <Ionicons
+                name={
+                  ehGanho
+                    ? "trending-up"
+                    : (iconePorCategoria(transacao.categoria) as any)
+                }
+                size={18}
+                color={CORES.verde}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={[
+                  estilos.tituloRecibo,
+                  excluida && estilos.textoRiscado,
+                ]}
+              >
+                {transacao.descricao}
+              </Text>
+              <Text style={estilos.subRecibo}>
+                {ehGanho ? "Entrada" : transacao.categoria} • {transacao.data}
+              </Text>
+            </View>
+            <Text
+              style={[
+                estilos.valorRecibo,
+                ehGanho && { color: CORES.verde },
+                excluida && estilos.textoRiscado,
+              ]}
+            >
+              {ehGanho ? "+" : "-"}
+              {formatarMoeda(transacao.valor)}
+            </Text>
+          </View>
+
+          {excluida ? (
+            <Text style={estilos.textoRemovido}>Removido</Text>
+          ) : (
+            <View style={estilos.rodapeRecibo}>
+              <Pressable
+                onPress={() => onEditarTransacao(transacao)}
+                hitSlop={8}
+              >
+                <Text style={estilos.linkRecibo}>Editar</Text>
+              </Pressable>
+              <Text style={estilos.pontoSeparador}>•</Text>
+              <Pressable
+                onPress={() => onExcluirTransacao(transacao.numero_usuario)}
+                hitSlop={8}
+              >
+                <Text style={[estilos.linkRecibo, { color: CORES.perigo }]}>
+                  Excluir
+                </Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  // Card de Saldo minimalista
+  if (mensagem.tipo === "card_saldo") {
     const saldo = Number(extras.saldo ?? 0);
     return (
-      <View style={estilos.cardInterno}>
-        <View style={estilos.cabecalhoCard}>
-          <Ionicons name="wallet-outline" size={18} color="#10b981" />
-          <Text style={estilos.tituloSecaoCard}>Saldo Disponível</Text>
+      <View style={[estilos.linha, estilos.linhaEsquerda]}>
+        <View style={estilos.cardRecibo}>
+          <Text style={estilos.labelPequena}>SALDO DISPONÍVEL</Text>
+          <Text style={estilos.valorGrandeSaldo}>{formatarMoeda(saldo)}</Text>
         </View>
-        <Text style={estilos.valorSaldo}>{formatarMoeda(saldo)}</Text>
-        <Text style={estilos.dicaSecundaria}>
-          Para alterar, envie por exemplo: "Meu saldo agora é 2500"
-        </Text>
       </View>
     );
-  };
+  }
 
-  const renderizarCardResumo = () => {
-    const resumo = extras as DadosResumoCard;
-    const categorias = Object.entries(resumo.total_por_categoria || {});
+  // Card de Resumo Mensal
+  if (mensagem.tipo === "card_resumo") {
+    const resumo = extras as DadosResumoCard & {
+      categorias?: Record<string, number>;
+      ganho_total?: number;
+    };
+    const mapa = resumo.categorias || resumo.total_por_categoria || {};
+    const categorias = Object.entries(mapa);
     const total = Number(resumo.gasto_total || 0);
+    const ganhoTotal = Number(resumo.ganho_total || 0);
 
     return (
-      <View style={estilos.cardInterno}>
-        <View style={estilos.cabecalhoCard}>
-          <Ionicons name="pie-chart-outline" size={18} color="#10b981" />
-          <Text style={estilos.tituloSecaoCard}>
-            Resumo de {resumo.mes || "Mês Atual"}
-          </Text>
-        </View>
-
-        <Text style={estilos.valorGasto}>{formatarMoeda(total)}</Text>
-
-        {categorias.length > 0 ? (
-          <View style={estilos.listaCategorias}>
-            {categorias.map(([cat, valorCat]) => {
-              const percentual =
-                total > 0 ? Math.min(100, Math.round((valorCat / total) * 100)) : 0;
-              return (
-                <View key={cat} style={estilos.itemCategoria}>
-                  <View style={estilos.linhaCategoriaTexto}>
-                    <Text style={estilos.nomeCategoria}>{cat}</Text>
-                    <Text style={estilos.valorCategoria}>
-                      {formatarMoeda(valorCat)} ({percentual}%)
-                    </Text>
-                  </View>
-                  <View style={estilos.barraFundo}>
-                    <View
-                      style={[estilos.barraPreenchida, { width: `${percentual}%` }]}
-                    />
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        ) : (
-          <Text style={estilos.dicaSecundaria}>
-            Nenhum gasto registrado neste período.
-          </Text>
-        )}
-
-        {resumo.categoria_vilao ? (
-          <View style={estilos.boxVilao}>
-            <Text style={estilos.textoVilao}>
-              ⚠️ Maior gasto: <Text style={{ fontWeight: "700" }}>{resumo.categoria_vilao}</Text>
+      <View style={[estilos.linha, estilos.linhaEsquerda]}>
+        <View style={estilos.cardRecibo}>
+          <Text style={estilos.labelPequena}>GASTOS NO MÊS</Text>
+          <Text style={estilos.valorGrandeGasto}>{formatarMoeda(total)}</Text>
+          {ganhoTotal > 0 ? (
+            <Text style={estilos.subResumoGanho}>
+              Entradas:{" "}
+              <Text style={{ color: CORES.verde, fontWeight: "700" }}>
+                +{formatarMoeda(ganhoTotal)}
+              </Text>
             </Text>
-          </View>
-        ) : null}
+          ) : null}
 
-        {resumo.dica_ia ? (
-          <View style={estilos.boxDicaIa}>
-            <Text style={estilos.textoDicaIa}>💡 {resumo.dica_ia}</Text>
-          </View>
-        ) : null}
+          {categorias.length > 0 ? (
+            <View style={{ marginTop: 12, gap: 10 }}>
+              {categorias.map(([cat, valorCat]) => {
+                const pct =
+                  total > 0
+                    ? Math.min(100, Math.round((valorCat / total) * 100))
+                    : 0;
+                return (
+                  <View key={cat} style={{ gap: 4 }}>
+                    <View style={estilos.linhaCatResumo}>
+                      <Text style={estilos.nomeCat}>{cat}</Text>
+                      <Text style={estilos.valorCat}>
+                        {formatarMoeda(valorCat)}
+                      </Text>
+                    </View>
+                    <View style={estilos.trilho}>
+                      <View
+                        style={[estilos.barra, { width: `${pct}%` }]}
+                      />
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
       </View>
     );
-  };
+  }
 
-  const renderizarCardLista = () => {
+  // Card de Lista de Lançamentos
+  if (mensagem.tipo === "card_lista") {
     const itens: DadosTransacaoCard[] = Array.isArray(extras.itens)
       ? extras.itens
       : [];
 
     return (
-      <View style={estilos.cardInterno}>
-        <View style={estilos.cabecalhoCard}>
-          <Ionicons name="list-outline" size={18} color="#10b981" />
-          <Text style={estilos.tituloSecaoCard}>{mensagem.conteudo}</Text>
-        </View>
-
-        {itens.map((item) => (
-          <View key={item.id || item.numero_usuario} style={estilos.itemListaTransacao}>
-            <View style={{ flex: 1 }}>
-              <Text style={estilos.itemListaTitulo}>
-                #{item.numero_usuario} • {item.descricao}
-              </Text>
-              <Text style={estilos.itemListaSub}>
-                {item.categoria} • {item.data}
-              </Text>
-            </View>
-            <View style={{ alignItems: "flex-end" }}>
-              <Text style={estilos.itemListaValor}>
-                - {formatarMoeda(item.valor)}
-              </Text>
-              <View style={estilos.itemListaBotoes}>
-                <Pressable onPress={() => onEditarTransacao(item)}>
-                  <Ionicons name="create-outline" size={16} color="#94a3b8" />
-                </Pressable>
-                <Pressable onPress={() => onExcluirTransacao(item.numero_usuario)}>
-                  <Ionicons name="trash-outline" size={16} color="#f87171" />
-                </Pressable>
+      <View style={[estilos.linha, estilos.linhaEsquerda]}>
+        <View style={estilos.cardRecibo}>
+          <Text style={estilos.labelPequena}>{mensagem.conteudo}</Text>
+          {itens.map((item) => (
+            <Pressable
+              key={item.id || item.numero_usuario}
+              style={estilos.itemLista}
+              onPress={() => onEditarTransacao(item)}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={estilos.tituloRecibo}>{item.descricao}</Text>
+                <Text style={estilos.subRecibo}>
+                  {item.categoria} • {item.data}
+                </Text>
               </View>
-            </View>
-          </View>
-        ))}
+              <Text
+                style={[
+                  estilos.valorRecibo,
+                  item.tipo === "GANHO" && { color: CORES.verde },
+                ]}
+              >
+                {item.tipo === "GANHO" ? "+" : "-"}
+                {formatarMoeda(item.valor)}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
       </View>
     );
-  };
+  }
 
+  // Mensagem de texto do assistente
   return (
-    <View
-      style={[
-        estilos.linhaContainer,
-        ehUsuario ? estilos.linhaDireita : estilos.linhaEsquerda,
-      ]}
-    >
-      <View
-        style={[
-          estilos.bolha,
-          ehUsuario ? estilos.bolhaUsuario : estilos.bolhaAssistente,
-        ]}
-      >
-        {ehUsuario && mensagem.tipo === "audio" ? (
-          <View style={estilos.badgeAudio}>
-            <Ionicons name="mic" size={14} color="#a7f3d0" />
-            <Text style={estilos.textoBadgeAudio}>
-              Áudio transcrito
-              {extras.duracao_segundos ? ` (${extras.duracao_segundos}s)` : ""}
-            </Text>
-          </View>
-        ) : null}
-
-        {mensagem.tipo === "card_transacao" ? (
-          renderizarCardTransacao()
-        ) : mensagem.tipo === "card_saldo" ? (
-          renderizarCardSaldo()
-        ) : mensagem.tipo === "card_resumo" ? (
-          renderizarCardResumo()
-        ) : mensagem.tipo === "card_lista" ? (
-          renderizarCardLista()
-        ) : (
-          <Text style={estilos.textoMensagem}>{mensagem.conteudo}</Text>
-        )}
-
-        <Text style={estilos.horario}>{formatarHora(mensagem.criado_em)}</Text>
+    <View style={[estilos.linha, estilos.linhaEsquerda]}>
+      <View style={estilos.bolhaAssistente}>
+        <Text style={estilos.textoAssistente}>{mensagem.conteudo}</Text>
       </View>
     </View>
   );
 }
 
 const estilos = StyleSheet.create({
-  linhaContainer: {
+  linha: {
     width: "100%",
+    paddingHorizontal: 16,
     marginVertical: 4,
-    paddingHorizontal: 12,
     flexDirection: "row",
   },
   linhaDireita: {
@@ -286,225 +249,159 @@ const estilos = StyleSheet.create({
   linhaEsquerda: {
     justifyContent: "flex-start",
   },
-  bolha: {
-    maxWidth: "86%",
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
   bolhaUsuario: {
-    backgroundColor: "#005c4b",
-    borderBottomRightRadius: 4,
+    maxWidth: "78%",
+    backgroundColor: CORES.verde,
+    borderRadius: 22,
+    borderBottomRightRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
   },
-  bolhaAssistente: {
-    backgroundColor: "#202c33",
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: "#2a3942",
-  },
-  badgeAudio: {
+  tagAudio: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  textoBadgeAudio: {
-    color: "#a7f3d0",
+  textoTagAudio: {
+    color: "#04131E",
     fontSize: 11,
-    fontWeight: "600",
+    fontWeight: "700",
+    opacity: 0.75,
   },
-  textoMensagem: {
-    color: "#f8fafc",
+  textoUsuario: {
+    color: "#04131E",
+    fontSize: 15,
+    fontWeight: "600",
+    lineHeight: 20,
+  },
+  bolhaAssistente: {
+    maxWidth: "80%",
+    backgroundColor: CORES.fundoElevado,
+    borderRadius: 22,
+    borderBottomLeftRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  textoAssistente: {
+    color: CORES.textoPrincipal,
     fontSize: 15,
     lineHeight: 21,
   },
-  horario: {
-    color: "rgba(226, 232, 240, 0.65)",
-    fontSize: 11,
-    alignSelf: "flex-end",
-    marginTop: 4,
+  cardRecibo: {
+    width: 280,
+    backgroundColor: CORES.fundoElevado,
+    borderRadius: 20,
+    padding: 16,
   },
-  cardInterno: {
-    minWidth: 240,
-  },
-  cabecalhoCard: {
+  topoRecibo: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-    marginBottom: 6,
+    gap: 12,
   },
-  badgeCategoria: {
-    flexDirection: "row",
+  circuloIcone: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: CORES.superficie,
     alignItems: "center",
-    backgroundColor: "rgba(16, 185, 129, 0.14)",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    gap: 4,
+    justifyContent: "center",
   },
-  textoBadgeCategoria: {
-    color: "#34d399",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  idTransacao: {
-    color: "#94a3b8",
-    fontSize: 12,
+  tituloRecibo: {
+    color: "#FFFFFF",
+    fontSize: 15,
     fontWeight: "700",
   },
-  tituloTransacao: {
-    color: "#f8fafc",
-    fontSize: 16,
-    fontWeight: "700",
+  subRecibo: {
+    color: CORES.textoSecundario,
+    fontSize: 12,
     marginTop: 2,
   },
-  valorGasto: {
-    color: "#f87171",
-    fontSize: 20,
-    fontWeight: "800",
-    marginVertical: 4,
-  },
-  valorSaldo: {
-    color: "#34d399",
-    fontSize: 24,
-    fontWeight: "800",
-    marginVertical: 6,
+  valorRecibo: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
   },
   textoRiscado: {
     textDecorationLine: "line-through",
-    opacity: 0.5,
+    opacity: 0.4,
   },
-  metaLinha: {
-    flexDirection: "row",
-    gap: 6,
-    marginTop: 2,
-  },
-  metaTexto: {
-    color: "#94a3b8",
-    fontSize: 12,
-  },
-  avisoExcluida: {
-    color: "#fca5a5",
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: 8,
-  },
-  acoesCard: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: "#2a3942",
-  },
-  botaoAcaoCard: {
-    flex: 1,
+  rodapeRecibo: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 5,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: "#111b21",
+    gap: 10,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 0.5,
+    borderTopColor: CORES.divisor,
   },
-  botaoExcluirCard: {
-    backgroundColor: "rgba(239, 68, 68, 0.12)",
-  },
-  textoBotaoAcao: {
-    color: "#cbd5e1",
+  linkRecibo: {
+    color: CORES.textoSecundario,
     fontSize: 12,
     fontWeight: "600",
   },
-  tituloSecaoCard: {
-    color: "#e2e8f0",
-    fontSize: 14,
-    fontWeight: "700",
-    flex: 1,
-  },
-  dicaSecundaria: {
-    color: "#94a3b8",
+  pontoSeparador: {
+    color: CORES.textoSuave,
     fontSize: 12,
+  },
+  textoRemovido: {
+    color: CORES.perigo,
+    fontSize: 12,
+    marginTop: 10,
+  },
+  labelPequena: {
+    color: CORES.textoSecundario,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+  },
+  valorGrandeSaldo: {
+    color: CORES.verde,
+    fontSize: 26,
+    fontWeight: "800",
     marginTop: 4,
   },
-  listaCategorias: {
-    marginTop: 8,
-    gap: 8,
+  valorGrandeGasto: {
+    color: "#FFFFFF",
+    fontSize: 24,
+    fontWeight: "800",
+    marginTop: 4,
   },
-  itemCategoria: {
-    gap: 4,
+  subResumoGanho: {
+    color: CORES.textoSecundario,
+    fontSize: 13,
+    marginTop: 4,
   },
-  linhaCategoriaTexto: {
+  linhaCatResumo: {
     flexDirection: "row",
     justifyContent: "space-between",
   },
-  nomeCategoria: {
-    color: "#e2e8f0",
+  nomeCat: {
+    color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "600",
   },
-  valorCategoria: {
-    color: "#cbd5e1",
-    fontSize: 12,
+  valorCat: {
+    color: CORES.textoSecundario,
+    fontSize: 13,
   },
-  barraFundo: {
-    height: 6,
-    backgroundColor: "#111b21",
-    borderRadius: 3,
+  trilho: {
+    height: 4,
+    backgroundColor: CORES.superficie,
+    borderRadius: 2,
     overflow: "hidden",
   },
-  barraPreenchida: {
+  barra: {
     height: "100%",
-    backgroundColor: "#10b981",
+    backgroundColor: CORES.dourado,
   },
-  boxVilao: {
-    marginTop: 10,
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: "rgba(245, 158, 11, 0.12)",
-  },
-  textoVilao: {
-    color: "#fcd34d",
-    fontSize: 12,
-  },
-  boxDicaIa: {
-    marginTop: 8,
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
-  },
-  textoDicaIa: {
-    color: "#a7f3d0",
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  itemListaTransacao: {
+  itemLista: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: "#2a3942",
-    gap: 10,
-  },
-  itemListaTitulo: {
-    color: "#f8fafc",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  itemListaSub: {
-    color: "#94a3b8",
-    fontSize: 11,
-    marginTop: 2,
-  },
-  itemListaValor: {
-    color: "#f87171",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  itemListaBotoes: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 4,
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    borderTopWidth: 0.5,
+    borderTopColor: CORES.divisor,
+    marginTop: 6,
   },
 });

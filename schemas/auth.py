@@ -27,3 +27,11 @@ class ResponseTokens(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     usuario: ResponseUsuarioAuth
+
+class RequestEsqueciSenha(BaseModel):
+    email: EmailStr
+
+class RequestRedefinirSenha(BaseModel):
+    email: EmailStr
+    codigo: str = Field(min_length=6, max_length=6)
+    nova_senha: str = Field(min_length=8, max_length=128) 

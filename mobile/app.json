@@ -1,32 +1,40 @@
 {
   "expo": {
-    "name": "Bot Finança",
-    "slug": "bot-financa",
+    "name": "FinaceAi",
+    "slug": "finaceai",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "botfinanca",
-    "userInterfaceStyle": "dark",
+    "icon": "./assets/logo.jpg",
+    "scheme": "finaceai",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Permita o acesso ao microfone para registrar gastos por voz."
+        "NSMicrophoneUsageDescription": "Permita o acesso ao microfone para registrar gastos por voz no FinaceAi."
       }
     },
     "android": {
-      "package": "com.neto311.botfinanca",
+      "package": "com.neto311.finaceai",
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
       "bundler": "metro",
-      "output": "single"
+      "output": "single",
+      "favicon": "./assets/logo.jpg",
+      "name": "FinaceAi",
+      "shortName": "FinaceAi",
+      "description": "Gestão financeira inteligente por voz e conversa",
+      "themeColor": "#04131E",
+      "backgroundColor": "#04131E",
+      "display": "standalone",
+      "orientation": "portrait"
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store",
-      "expo-audio"
+      "expo-secure-store"
     ]
   }
 }

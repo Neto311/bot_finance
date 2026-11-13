@@ -144,6 +144,35 @@ export const apiAuth = {
     ),
 
   obterPerfil: () => requisicaoApi<UsuarioAuth>("/auth/me"),
+
+  solicitarRecuperacaoSenha: (email: string) =>
+    requisicaoApi<{ mensagem: string }>(
+      "/auth/esqueci-senha",
+      {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      },
+      false
+    ),
+
+  redefinirSenha: (email: string, codigo: string, novaSenha: string) =>
+    requisicaoApi<{ mensagem: string }>(
+      "/auth/redefinir-senha",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          email,
+          codigo,
+          nova_senha: novaSenha,
+        }),
+      },
+      false
+    ),
+
+  excluirMinhaConta: () =>
+    requisicaoApi<{ mensagem: string }>("/auth/me", {
+      method: "DELETE",
+    }),
 };
 
 export const apiChat = {
@@ -231,6 +260,43 @@ export const apiChat = {
 };
 
 export const apiFinancas = {
+  obterResumoMes: (mes: number, ano: number) =>
+    requisicaoApi<{
+      mes: number;
+      ano: number;
+      gasto_total: number;
+      ganho_total?: number;
+      saldo_mes?: number;
+      categorias: Record<string, number>;
+    }>(`/resumo?mes=${mes}&ano=${ano}`),
+
+  listarPorMes: (mes: number, ano: number) =>
+    requisicaoApi<
+      Array<{
+        id: number;
+        numero_usuario: number;
+        valor: number;
+        categoria: string;
+        descricao: string;
+        tipo: string;
+        data: string;
+        origem?: string;
+      }>
+    >(`/financas/data?mes=${mes}&ano=${ano}`),
+
+  listarUltimas: (quantidade = 15) =>
+    requisicaoApi<{
+      transactions: Array<any>;
+      hasMore: boolean;
+      nextCursor?: string | null;
+    }>(`/financas/ultimas?quantidade=${quantidade}`),
+
+  atualizarSaldo: (saldo: number) =>
+    requisicaoApi(`/saldo`, {
+      method: "PUT",
+      body: JSON.stringify({ saldo }),
+    }),
+
   editarTransacao: (
     numeroUsuario: number,
     dados: {

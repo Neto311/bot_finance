@@ -73,12 +73,15 @@ Opções válidas para o campo intencao:
 - LISTAR_RECENTES: quando o usuário pede para ver os últimos gastos ou lançamentos recentes sem especificar um mês fechado (ex: "ver gastos", "últimas transações", "o que gastei recentemente?").
 - LISTAR_MES: quando o usuário pede a lista ou extrato de transações de um mês específico (ex: "buscar gastos de agosto", "transações de 05 2026", "extrato desse mês").
 - AJUDA: quando o usuário apenas cumprimenta ("oi", "bom dia"), pede ajuda de como usar o app ou envia algo fora do contexto financeiro.
+- REGISTRAR_GANHO: quando o usuário relata uma receita, salário, venda, pix recebido ou entrada de dinheiro com valor (ex: "recebi 3500 de salário", "ganhei 200 de freelance", "pix de 150").
+- ANALISE_FINANCEIRA: quando o usuário pede análise, diagnóstico, dicas de economia ou avaliação dos seus gastos do mês (ex: "analise minhas finanças", "onde posso economizar?", "como estão meus gastos?").
 
 Regras para mes e ano:
 - A data atual (YYYY-MM-DD) será informada junto da mensagem.
 - Quando a intenção for RESUMO_MES ou LISTAR_MES e o usuário disser "este mês", "mês atual" ou não especificar mês/ano, use o mês e o ano da data atual.
 - Se o usuário mencionar apenas o mês (ex: "outubro"), use o ano da data atual.
 - Para outras intenções, use null em mes e ano.
+- Analise financeira quando a intenção for RESUMO_MES, LISTAR_MES ou ANALISE_FINANCEIRA
 
 Regras para valor:
 - Quando a intenção for ATUALIZAR_SALDO, extraia o novo valor numérico do saldo.
@@ -135,3 +138,30 @@ def interpretar_mensagem_chat(texto_usuario:str):
     )
 
     return json.loads(completion.choices[0].message.content)
+
+def gerar_analise_financeira(dados_resumo: dict, saldo_atual: float, transacoes: list[dict]) -> str:
+    mensagem = (
+        f"Dados financeiros do usuário:\n"
+        f"- Saldo atual em conta: R$ {saldo_atual:.2f}\n"
+        f"- Total de ganhos no mês: R$ {dados_resumo.get('ganho_total', 0):.2f}\n"
+        f"- Total de gastos no mês: R$ {dados_resumo.get('gasto_total', 0):.2f}\n"
+        f"- Totais por categoria: {json.dumps(dados_resumo.get('categorias', {}), ensure_ascii=False)}\n"
+        f"- Transações do mês: {json.dumps(transacoes, ensure_ascii=False)}\n\n"
+        "Analise as transações considerando os títulos/descrições para diferenciar gastos essenciais "
+        "(ex: mercado, aluguel, saúde, contas) de gastos supérfluos ou evitáveis (ex: restaurantes, delivery, lazer). "
+        "Faça uma análise objetiva, prática e amigável em português (máximo 5 frases): "
+        "compare ganhos x gastos se houver ganhos, aponte onde o dinheiro está concentrado citando exemplos reais das transações, "
+        "e dê 1 ou 2 recomendações concretas de economia."
+    )
+
+    completion = client.chat.completions.create(
+        model = "openai/gpt-oss-120b",
+        messages = [
+            {
+                "role": "system",
+                "content": "Você é um consultor financeiro pessoal direto, claro e prático. Não use Markdown pesado.",
+            },
+            {"role": "user", "content": mensagem},
+        ],
+    )
+    return (completion.choices[0].message.content or "").strip()

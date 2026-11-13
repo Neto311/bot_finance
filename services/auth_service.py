@@ -2,6 +2,7 @@ from pwdlib import PasswordHash
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 import jwt
+import httpx
 
 from dotenv import load_dotenv
 from os import getenv
@@ -11,6 +12,8 @@ load_dotenv()
 
 JWT_SECRET_KEY = getenv("JWT_SECRET_KEY")
 GOOGLE_CLIENT_ID = getenv("GOOGLE_CLIENT_ID")
+RESEND_API_KEY = getenv("RESEND_API_KEY")
+RESEND_FROM = getenv("RESEND_FROM", "FinaceAi <onboarding@resend.dev>")
 
 password_hash = PasswordHash.recommended()
 
@@ -81,3 +84,35 @@ def validar_token_google(token_google: str) -> dict:
     }
 
 
+def enviar_email_recuperacao(destinatario: str, codigo: str) -> None:
+    if not RESEND_API_KEY:
+          print(f"[FinanceAI - MODO DEV] Código para {destinatario}: {codigo}")
+          return
+    
+    resposta = httpx.post(
+         "https://api.resend.com/emails",
+         headers={
+              "Authorization": f"Bearer {RESEND_API_KEY}",
+              "Content-Type": "application/json",
+
+         },
+         json={
+              "from": RESEND_FROM,
+              "to": [destinatario],
+              "subject": f"{codigo} é o seu código de segurança FinaceAI",
+              "html": (
+                f"<div style='font-family:sans-serif;padding:24px;background:#04131E;color:#fff;border-radius:12px'>"
+                f"<h2 style='margin:0 0 12px'>Finace<span style='color:#F3C75F'>Ai</span></h2>"
+                f"<p>Use o código abaixo para redefinir sua senha:</p>"
+                f"<div style='font-size:32px;font-weight:800;letter-spacing:6px;color:#1ED760;margin:20px 0'>{codigo}</div>"
+                f"<p style='color:#8BA3B8;font-size:13px'>Este código expira em 15 minutos.</p>"
+                f"</div>"
+            ),
+         },
+         timeout=10.0,
+         
+    )
+
+    if resposta.status_code >= 400:
+         print(f"[FinaceAi] Erro Resend ({resposta.status_code}): {resposta.text}")
+    

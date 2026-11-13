@@ -1,17 +1,22 @@
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Link } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../src/context/AuthContext";
+import { CORES } from "../src/theme/colors";
 
 export default function TelaLogin() {
   const { entrar } = useAuth();
@@ -23,7 +28,7 @@ export default function TelaLogin() {
 
   const handleLogin = async () => {
     if (!email.trim() || !senha) {
-      setErro("Preencha seu e-mail e senha.");
+      setErro("Insira seu e-mail e senha.");
       return;
     }
 
@@ -32,211 +37,261 @@ export default function TelaLogin() {
     try {
       await entrar(email, senha);
     } catch (e: any) {
-      setErro(e?.message || "Falha ao entrar. Verifique suas credenciais.");
+      setErro(e?.message || "E-mail ou senha incorretos.");
     } finally {
       setEnviando(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={estilos.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <View style={estilos.card}>
-        <View style={estilos.iconeContainer}>
-          <Ionicons name="wallet-outline" size={38} color="#10b981" />
-        </View>
-
-        <Text style={estilos.titulo}>Bot Finança</Text>
-        <Text style={estilos.subtitulo}>
-          Seu assistente financeiro inteligente no estilo chat
-        </Text>
-
-        {erro ? (
-          <View style={estilos.alertaErro}>
-            <Ionicons name="alert-circle-outline" size={18} color="#f87171" />
-            <Text style={estilos.textoErro}>{erro}</Text>
-          </View>
-        ) : null}
-
-        <Text style={estilos.label}>E-mail</Text>
-        <TextInput
-          style={estilos.input}
-          placeholder="seu@email.com"
-          placeholderTextColor="#64748b"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          value={email}
-          onChangeText={setEmail}
-        />
-
-        <Text style={estilos.label}>Senha</Text>
-        <View style={estilos.senhaWrapper}>
-          <TextInput
-            style={estilos.inputSenha}
-            placeholder="Sua senha"
-            placeholderTextColor="#64748b"
-            secureTextEntry={!mostrarSenha}
-            value={senha}
-            onChangeText={setSenha}
-            onSubmitEditing={handleLogin}
+    <SafeAreaView style={estilos.safe}>
+      <StatusBar barStyle="light-content" />
+      <KeyboardAvoidingView
+        style={estilos.container}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        {/* Centro Limpo Estilo Instagram / Spotify (Sem Caixa / Card em volta) */}
+        <View style={estilos.centro}>
+          <Image
+            source={require("../assets/logo.jpg")}
+            style={estilos.logo}
+            resizeMode="cover"
           />
-          <Pressable
-            onPress={() => setMostrarSenha((v) => !v)}
-            style={estilos.botaoOlho}
-          >
-            <Ionicons
-              name={mostrarSenha ? "eye-off-outline" : "eye-outline"}
-              size={20}
-              color="#94a3b8"
+          <Text style={estilos.marca}>
+            Finace<Text style={{ color: CORES.dourado }}>Ai</Text>
+          </Text>
+
+          {erro ? <Text style={estilos.erroTexto}>{erro}</Text> : null}
+
+          <View style={estilos.form}>
+            <TextInput
+              style={estilos.input}
+              placeholder="E-mail"
+              placeholderTextColor={CORES.textoSecundario}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              value={email}
+              onChangeText={setEmail}
             />
-          </Pressable>
+
+            <View style={estilos.inputSenhaBox}>
+              <TextInput
+                style={estilos.inputSenha}
+                placeholder="Senha"
+                placeholderTextColor={CORES.textoSecundario}
+                secureTextEntry={!mostrarSenha}
+                value={senha}
+                onChangeText={setSenha}
+                onSubmitEditing={handleLogin}
+              />
+              <Pressable
+                onPress={() => setMostrarSenha((v) => !v)}
+                hitSlop={10}
+              >
+                <Ionicons
+                  name={mostrarSenha ? "eye-off" : "eye"}
+                  size={20}
+                  color={CORES.textoSecundario}
+                />
+              </Pressable>
+            </View>
+
+            <View style={{ alignItems: "flex-end" }}>
+              <Link href="/esqueci-senha" asChild>
+                <Pressable hitSlop={8}>
+                  <Text style={estilos.linkEsqueciSenha}>
+                    Esqueceu a senha?
+                  </Text>
+                </Pressable>
+              </Link>
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [
+                estilos.botaoEntrar,
+                (enviando || pressed) && { opacity: 0.85 },
+              ]}
+              onPress={handleLogin}
+              disabled={enviando}
+            >
+              {enviando ? (
+                <ActivityIndicator color="#04131E" />
+              ) : (
+                <Text style={estilos.textoBotaoEntrar}>Entrar</Text>
+              )}
+            </Pressable>
+
+            <View style={estilos.divisorRow}>
+              <View style={estilos.linhaDivisor} />
+              <Text style={estilos.textoOu}>OU</Text>
+              <View style={estilos.linhaDivisor} />
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [
+                estilos.botaoGoogle,
+                pressed && { opacity: 0.75 },
+              ]}
+              onPress={() =>
+                Alert.alert(
+                  "Google Login",
+                  "Vamos ativar a chave OAuth do Google Cloud no próximo passo!"
+                )
+              }
+            >
+              <Ionicons name="logo-google" size={18} color="#FFFFFF" />
+              <Text style={estilos.textoBotaoGoogle}>Continuar com Google</Text>
+            </Pressable>
+          </View>
         </View>
 
-        <Pressable
-          style={[estilos.botaoPrimario, enviando && estilos.botaoDesabilitado]}
-          onPress={handleLogin}
-          disabled={enviando}
-        >
-          {enviando ? (
-            <ActivityIndicator color="#052e16" />
-          ) : (
-            <Text style={estilos.textoBotaoPrimario}>Entrar</Text>
-          )}
-        </Pressable>
-
+        {/* Rodapé fixo na base estilo Instagram */}
         <View style={estilos.rodape}>
-          <Text style={estilos.textoRodape}>Ainda não tem conta? </Text>
+          <Text style={estilos.textoRodape}>Não tem uma conta? </Text>
           <Link href="/registro" asChild>
-            <Pressable>
-              <Text style={estilos.linkRodape}>Criar conta grátis</Text>
+            <Pressable hitSlop={8}>
+              <Text style={estilos.linkRodape}>Cadastre-se.</Text>
             </Pressable>
           </Link>
         </View>
-      </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const estilos = StyleSheet.create({
+  safe: {
+    flex: 1,
+    backgroundColor: CORES.fundo,
+  },
   container: {
     flex: 1,
-    backgroundColor: "#0b141a",
-    justifyContent: "center",
-    padding: 20,
+    justifyContent: "space-between",
   },
-  card: {
-    backgroundColor: "#111b21",
-    borderRadius: 20,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: "#1f2c34",
-    maxWidth: 440,
+  centro: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 28,
+    maxWidth: 420,
     width: "100%",
     alignSelf: "center",
   },
-  iconeContainer: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: "rgba(16, 185, 129, 0.12)",
-    alignItems: "center",
-    justifyContent: "center",
+  logo: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
     alignSelf: "center",
     marginBottom: 14,
   },
-  titulo: {
-    fontSize: 26,
-    fontWeight: "700",
-    color: "#f8fafc",
+  marca: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: "#FFFFFF",
     textAlign: "center",
+    letterSpacing: -0.5,
+    marginBottom: 36,
   },
-  subtitulo: {
-    fontSize: 14,
-    color: "#94a3b8",
+  erroTexto: {
+    color: CORES.perigo,
+    fontSize: 13,
     textAlign: "center",
-    marginTop: 6,
-    marginBottom: 22,
-  },
-  alertaErro: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(239, 68, 68, 0.12)",
-    borderColor: "rgba(239, 68, 68, 0.35)",
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
     marginBottom: 14,
-    gap: 8,
   },
-  textoErro: {
-    color: "#fca5a5",
-    fontSize: 13,
-    flex: 1,
-  },
-  label: {
-    color: "#cbd5e1",
-    fontSize: 13,
-    fontWeight: "600",
-    marginBottom: 6,
-    marginTop: 8,
+  form: {
+    gap: 12,
   },
   input: {
-    backgroundColor: "#202c33",
-    color: "#f8fafc",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    height: 52,
+    backgroundColor: CORES.superficieInput,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    color: "#FFFFFF",
     fontSize: 15,
-    borderWidth: 1,
-    borderColor: "#2a3942",
+    borderWidth: 0.5,
+    borderColor: CORES.bordaInput,
   },
-  senhaWrapper: {
+  inputSenhaBox: {
+    height: 52,
+    backgroundColor: CORES.superficieInput,
+    borderRadius: 10,
+    paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#202c33",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#2a3942",
+    borderWidth: 0.5,
+    borderColor: CORES.bordaInput,
   },
   inputSenha: {
     flex: 1,
-    color: "#f8fafc",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    color: "#FFFFFF",
     fontSize: 15,
+    height: "100%",
   },
-  botaoOlho: {
-    paddingHorizontal: 12,
+  linkEsqueciSenha: {
+    color: CORES.verde,
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 2,
   },
-  botaoPrimario: {
-    backgroundColor: "#10b981",
-    borderRadius: 12,
-    paddingVertical: 14,
+  botaoEntrar: {
+    height: 50,
+    backgroundColor: CORES.verde,
+    borderRadius: 25,
     alignItems: "center",
-    marginTop: 22,
+    justifyContent: "center",
+    marginTop: 8,
   },
-  botaoDesabilitado: {
-    opacity: 0.65,
-  },
-  textoBotaoPrimario: {
-    color: "#042f2e",
+  textoBotaoEntrar: {
+    color: "#04131E",
     fontSize: 16,
     fontWeight: "700",
+  },
+  divisorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 14,
+    gap: 14,
+  },
+  linhaDivisor: {
+    flex: 1,
+    height: 0.5,
+    backgroundColor: CORES.bordaInput,
+  },
+  textoOu: {
+    color: CORES.textoSecundario,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  botaoGoogle: {
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: CORES.bordaInput,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+  textoBotaoGoogle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "600",
   },
   rodape: {
     flexDirection: "row",
     justifyContent: "center",
-    marginTop: 20,
+    alignItems: "center",
+    paddingVertical: 18,
+    borderTopWidth: 0.5,
+    borderTopColor: CORES.divisor,
   },
   textoRodape: {
-    color: "#94a3b8",
-    fontSize: 14,
+    color: CORES.textoSecundario,
+    fontSize: 13,
   },
   linkRodape: {
-    color: "#10b981",
-    fontSize: 14,
+    color: "#FFFFFF",
+    fontSize: 13,
     fontWeight: "700",
   },
 });

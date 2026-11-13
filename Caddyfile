@@ -9,3 +9,7 @@ bot-finance-neto.duckdns.org {
         respond "Not Found" 404
     }
 }
+
+api.usefinanceai.com.br {
+    reverse_proxy api:8000
+}

@@ -4,7 +4,7 @@ from sqlalchemy import extract
 from datetime import date
 
 from models.chat import MensagemChat
-from services.groq_client import interpretar_mensagem_chat
+from services.groq_client import interpretar_mensagem_chat, gerar_analise_financeira
 from routes.routes import registrar_conforme_integracao, resumo
 from models.financas import Usuario, Financa
 
@@ -30,10 +30,11 @@ async def processar_mensagem_usuario(
     analise = interpretar_mensagem_chat(texto)
     intencao = analise.get("intencao")
 
-    if intencao == "REGISTRAR_GASTO":
+    if intencao in {"REGISTRAR_GASTO", "REGISTRAR_GANHO"}:
         financa = await registrar_conforme_integracao(texto, usuario_id, db)
         tipo_resp = "card_transacao"
-        conteudo_resp = f"Gasto registrado: {financa.descricao} - R$ {financa.valor:.2f}"
+        prefixo = "Ganho registrado" if financa.tipo == "GANHO" else "Gasto registrado"
+        conteudo_resp = f"{prefixo}: {financa.descricao} - R$ {financa.valor:.2f}"
         extras_resp = {"id": financa.id, "numero_usuario": financa.numero_usuario, "valor": financa.valor,
                         "categoria": financa.categoria, "descricao": financa.descricao, "tipo": financa.tipo, "data": financa.data.strftime("%Y-%m-%d"), "origem": financa.origem}
 
@@ -80,6 +81,35 @@ async def processar_mensagem_usuario(
         conteudo_resp = f"Encontrei {len(itens)} lançamentos. " if itens else "Nenhuma transação encontrada"
         extras_resp = {"itens": [{"id": i.id, "numero_usuario": i.numero_usuario, "valor": i.valor, "categoria": 
                     i.categoria, "descricao": i.descricao, "tipo": i.tipo, "data": i.data.strftime("%Y-%m-%d")} for i in itens]}
+
+    elif intencao == "ANALISE_FINANCEIRA":
+        mes = int(analise.get("mes") or date.today().month)
+        ano = int(analise.get("ano") or date.today().year)
+
+        usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
+        dados_resumo = resumo(mes=mes, ano=ano, usuario_id=usuario_id, db=db)
+
+        itens = (
+            db.query(Financa).filter(Financa.usuario_id == usuario_id, 
+            extract("month", Financa.data) == mes, extract("year", Financa.data) == ano)
+            .order_by(Financa.data.asc()).all())
+        transacoes_lista = [
+            {
+                "data": i.data.strftime("%Y-%m-%d"),
+                "tipo": i.tipo,
+                "categoria": i.categoria,
+                "descricao": i.descricao,
+                "valor": i.valor
+            } for i in itens
+        ]
+
+        tipo_resp = "texto"
+        conteudo_resp = gerar_analise_financeira(
+            dados_resumo = dados_resumo,
+            saldo_atual = usuario.saldo if usuario else 0.0,
+            transacoes = transacoes_lista,
+        )
+        extras_resp = None
 
     else:
         tipo_resp = "texto"

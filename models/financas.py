@@ -31,6 +31,8 @@ class Usuario(Base):
     criado_em = Column(DateTime, default=datetime.now, nullable=False)
     saldo = Column(Float, default=0.0)
     proximo_numero_transacao = Column(Integer, nullable=False, default=1)
+    codigo_recuperacao = Column(String(6), nullable=True)
+    codigo_recuperacao_expira_em = Column(DateTime, nullable=True)
 
 class IdentidadeExterna(Base):
     __tablename__ = 'identidades_externas'

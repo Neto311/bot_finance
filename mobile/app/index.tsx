@@ -3,10 +3,13 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -21,20 +24,27 @@ import {
 } from "expo-audio";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../src/context/AuthContext";
-import { apiChat, apiFinancas } from "../src/services/api";
+import { apiAuth, apiChat, apiFinancas } from "../src/services/api";
 import { DadosTransacaoCard, MensagemChat } from "../src/types/api";
 import { BolhaMensagem } from "../src/components/BolhaMensagem";
 import { ModalEditarTransacao } from "../src/components/ModalEditarTransacao";
 import { ModalIntegracao } from "../src/components/ModalIntegracao";
+import { VisaoDashboard } from "../src/components/VisaoDashboard";
+import { CORES } from "../src/theme/colors";
 
-const ATALHOS_RAPIDOS = [
-  { label: "📋 Últimos gastos", comando: "Listar meus últimos gastos" },
-  { label: "💰 Meu saldo", comando: "Qual é o meu saldo atual?" },
-  { label: "📊 Resumo do mês", comando: "Resumo dos meus gastos deste mês" },
+const SUGESTOES = [
+  { label: "Analisar finanças", comando: "Analise minhas finanças deste mês" },
+  { label: "Resumo do mês", comando: "Resumo dos meus gastos deste mês" },
+  { label: "Meu saldo", comando: "Qual é o meu saldo atual?" },
+  { label: "Recentes", comando: "Listar meus últimos gastos" },
 ];
 
-export default function TelaChat() {
+export default function TelaPrincipal() {
   const { usuario, sair, recarregarUsuario } = useAuth();
+  const [abaAtiva, setAbaAtiva] = useState<"dashboard" | "chat" | "perfil">(
+    "chat"
+  );
+
   const [mensagens, setMensagens] = useState<MensagemChat[]>([]);
   const [temMais, setTemMais] = useState(false);
   const [proximoCursor, setProximoCursor] = useState<number | null>(null);
@@ -43,13 +53,12 @@ export default function TelaChat() {
 
   const [texto, setTexto] = useState("");
   const [assistenteDigitando, setAssistenteDigitando] = useState(false);
+  const [tecladoAberto, setTecladoAberto] = useState(false);
 
-  // Gravação de áudio (expo-audio nativo do SDK 58)
   const gravadorAudio = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const [gravando, setGravando] = useState(false);
   const [segundosGravacao, setSegundosGravacao] = useState(0);
 
-  // Modais
   const [transacaoEditando, setTransacaoEditando] =
     useState<DadosTransacaoCard | null>(null);
   const [modalIntegracaoVisivel, setModalIntegracaoVisivel] = useState(false);
@@ -58,6 +67,28 @@ export default function TelaChat() {
 
   useEffect(() => {
     carregarHistoricoInicial();
+  }, []);
+
+  useEffect(() => {
+    const eventoAbrir =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const eventoFechar =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const subAbrir = Keyboard.addListener(eventoAbrir, () => {
+      setTecladoAberto(true);
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 80);
+    });
+    const subFechar = Keyboard.addListener(eventoFechar, () => {
+      setTecladoAberto(false);
+    });
+
+    return () => {
+      subAbrir.remove();
+      subFechar.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -81,7 +112,7 @@ export default function TelaChat() {
       setTemMais(resp.tem_mais);
       setProximoCursor(resp.proximo_cursor);
     } catch {
-      // silencioso no primeiro carregamento
+      // silencioso
     } finally {
       setCarregandoInicial(false);
     }
@@ -131,9 +162,7 @@ export default function TelaChat() {
         id: -Date.now() - 1,
         remetente: "assistente",
         tipo: "texto",
-        conteudo: `⚠️ Não consegui processar agora: ${
-          e?.message || "Erro de conexão"
-        }`,
+        conteudo: e?.message || "Erro de conexão",
         criado_em: new Date().toISOString(),
       };
       setMensagens((atuais) => [...atuais, msgErro]);
@@ -146,10 +175,7 @@ export default function TelaChat() {
     try {
       const permissao = await AudioModule.requestRecordingPermissionsAsync();
       if (!permissao.granted) {
-        Alert.alert(
-          "Permissão de Microfone",
-          "Permita o uso do microfone nos Ajustes do iPhone para gravar seus gastos por voz."
-        );
+        Alert.alert("Microfone", "Permita o acesso ao microfone nos Ajustes.");
         return;
       }
 
@@ -162,10 +188,7 @@ export default function TelaChat() {
       gravadorAudio.record();
       setGravando(true);
     } catch (e: any) {
-      Alert.alert(
-        "Erro ao iniciar gravação",
-        e?.message || "Não foi possível acessar o microfone."
-      );
+      Alert.alert("Erro", e?.message || "Falha ao gravar.");
     }
   };
 
@@ -192,9 +215,7 @@ export default function TelaChat() {
         id: -Date.now(),
         remetente: "assistente",
         tipo: "texto",
-        conteudo: `⚠️ Erro ao transcrever áudio: ${
-          e?.message || "Tente novamente"
-        }`,
+        conteudo: e?.message || "Não foi possível transcrever.",
         criado_em: new Date().toISOString(),
       };
       setMensagens((atuais) => [...atuais, msgErro]);
@@ -214,6 +235,7 @@ export default function TelaChat() {
     }
   ) => {
     await apiFinancas.editarTransacao(numeroUsuario, dados);
+    recarregarUsuario();
     setMensagens((atuais) =>
       atuais.map((m) => {
         if (
@@ -222,9 +244,6 @@ export default function TelaChat() {
         ) {
           return {
             ...m,
-            conteudo: `Gasto editado: ${dados.descricao} - R$ ${dados.valor.toFixed(
-              2
-            )}`,
             dados_extras: {
               ...m.dados_extras,
               ...dados,
@@ -239,6 +258,7 @@ export default function TelaChat() {
   const handleExcluirTransacao = async (numeroUsuario: number) => {
     try {
       await apiFinancas.excluirTransacao(numeroUsuario);
+      recarregarUsuario();
       setMensagens((atuais) =>
         atuais.map((m) => {
           if (
@@ -257,174 +277,313 @@ export default function TelaChat() {
         })
       );
     } catch {
-      // ignora erro se já excluída
+      // silencioso
     }
   };
 
-  return (
-    <SafeAreaView style={estilos.safeArea}>
-      {/* Header estilo WhatsApp Financeiro */}
-      <View style={estilos.header}>
-        <View style={estilos.avatarAssistente}>
-          <Ionicons name="sparkles" size={20} color="#10b981" />
-        </View>
-
-        <View style={{ flex: 1 }}>
-          <Text style={estilos.nomeHeader}>Assistente Bot Finança</Text>
-          <Text style={estilos.subtituloHeader}>
-            Olá, {usuario?.nome?.split(" ")[0] || "Usuário"} • Modo:{" "}
-            {usuario?.provedor_principal === "minhas_economias"
-              ? "Minhas Economias"
-              : "Local"}
+  const renderizarPerfil = () => (
+    <View style={estilos.perfilContainer}>
+      <View style={estilos.perfilTopo}>
+        <View style={estilos.avatarGrande}>
+          <Text style={estilos.inicialAvatar}>
+            {(usuario?.nome?.[0] || "F").toUpperCase()}
           </Text>
         </View>
+        <Text style={estilos.nomePerfil}>{usuario?.nome || "Usuário"}</Text>
+        <Text style={estilos.emailPerfil}>{usuario?.email}</Text>
+      </View>
 
+      <View style={estilos.menuLista}>
         <Pressable
-          style={estilos.botaoHeader}
+          style={estilos.menuItem}
           onPress={() => setModalIntegracaoVisivel(true)}
         >
-          <Ionicons name="settings-outline" size={21} color="#cbd5e1" />
+          <Ionicons name="sync-outline" size={22} color="#FFFFFF" />
+          <View style={{ flex: 1 }}>
+            <Text style={estilos.menuTitulo}>Sincronização</Text>
+            <Text style={estilos.menuSub}>
+              {usuario?.provedor_principal === "minhas_economias"
+                ? "Minhas Economias"
+                : "Nuvem FinaceAi"}
+            </Text>
+          </View>
+          <Ionicons
+            name="chevron-forward"
+            size={18}
+            color={CORES.textoSecundario}
+          />
         </Pressable>
 
-        <Pressable style={estilos.botaoHeader} onPress={sair}>
-          <Ionicons name="log-out-outline" size={22} color="#f87171" />
+        <Pressable style={estilos.menuItem} onPress={sair}>
+          <Ionicons name="log-out-outline" size={22} color="#FFFFFF" />
+          <Text style={[estilos.menuTitulo, { flex: 1 }]}>Sair da conta</Text>
+        </Pressable>
+
+        <Pressable
+          style={estilos.menuItem}
+          onPress={() => {
+            Alert.alert(
+              "Excluir conta",
+              "Tem certeza que deseja excluir permanentemente sua conta e todos os seus dados financeiros?",
+              [
+                { text: "Cancelar", style: "cancel" },
+                {
+                  text: "Excluir conta",
+                  style: "destructive",
+                  onPress: async () => {
+                    try {
+                      await apiAuth.excluirMinhaConta();
+                      await sair();
+                    } catch (e: any) {
+                      Alert.alert(
+                        "Erro",
+                        e?.message || "Não foi possível excluir sua conta."
+                      );
+                    }
+                  },
+                },
+              ]
+            );
+          }}
+        >
+          <Ionicons name="trash-outline" size={22} color={CORES.perigo} />
+          <Text style={[estilos.menuTitulo, { color: CORES.perigo, flex: 1 }]}>
+            Excluir minha conta
+          </Text>
         </Pressable>
       </View>
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={estilos.safeArea} edges={["top", "left", "right"]}>
+      <StatusBar barStyle="light-content" />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
-        {carregandoInicial ? (
-          <View style={estilos.centroContainer}>
-            <ActivityIndicator size="large" color="#10b981" />
-          </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={mensagens}
-            keyExtractor={(item) => String(item.id)}
-            contentContainerStyle={estilos.listaConteudo}
-            onContentSizeChange={() =>
-              flatListRef.current?.scrollToEnd({ animated: true })
-            }
-            ListHeaderComponent={
-              temMais ? (
-                <Pressable
-                  style={estilos.botaoCarregarMais}
-                  onPress={carregarMensagensAnteriores}
-                  disabled={carregandoAnteriores}
-                >
-                  {carregandoAnteriores ? (
-                    <ActivityIndicator size="small" color="#10b981" />
-                  ) : (
-                    <Text style={estilos.textoCarregarMais}>
-                      Carregar mensagens anteriores
-                    </Text>
-                  )}
-                </Pressable>
-              ) : (
-                <View style={estilos.boasVindasCard}>
-                  <Text style={estilos.boasVindasTexto}>
-                    👋 Envie um gasto como{" "}
-                    <Text style={{ fontWeight: "700", color: "#34d399" }}>
-                      "Almoço 35"
-                    </Text>{" "}
-                    ou segure o microfone para falar!
-                  </Text>
-                </View>
-              )
-            }
-            renderItem={({ item }) => (
-              <BolhaMensagem
-                mensagem={item}
-                onEditarTransacao={(t) => setTransacaoEditando(t)}
-                onExcluirTransacao={handleExcluirTransacao}
-              />
-            )}
-            ListFooterComponent={
-              assistenteDigitando ? (
-                <View style={estilos.digitandoContainer}>
-                  <ActivityIndicator size="small" color="#10b981" />
-                  <Text style={estilos.digitandoTexto}>
-                    Assistente está analisando...
-                  </Text>
-                </View>
-              ) : null
-            }
+        {/* Header Minimalista estilo Instagram Direct / Spotify */}
+        <View style={estilos.header}>
+          <Image
+            source={require("../assets/logo.jpg")}
+            style={estilos.logoMini}
           />
-        )}
-
-        {/* Chips de Ação Rápida (1 toque) */}
-        <View style={estilos.barraChips}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={estilos.scrollChips}
-          >
-            {ATALHOS_RAPIDOS.map((atalho) => (
-              <Pressable
-                key={atalho.label}
-                style={estilos.chipAcao}
-                onPress={() => enviarMensagemTexto(atalho.comando)}
-              >
-                <Text style={estilos.textoChipAcao}>{atalho.label}</Text>
-              </Pressable>
-            ))}
-            <Pressable
-              style={estilos.chipAcao}
-              onPress={() => setModalIntegracaoVisivel(true)}
-            >
-              <Text style={estilos.textoChipAcao}>⚙️ Integrações</Text>
-            </Pressable>
-          </ScrollView>
+          <Text style={estilos.tituloHeader}>
+            Finace<Text style={{ color: CORES.dourado }}>Ai</Text>
+          </Text>
         </View>
 
-        {/* Barra de Entrada de Mensagem / Áudio */}
-        <View style={estilos.barraEntrada}>
-          {gravando ? (
-            <View style={estilos.gravandoBox}>
-              <View style={estilos.pontoVermelho} />
-              <Text style={estilos.gravandoTexto}>
-                Gravando áudio... {segundosGravacao}s
-              </Text>
-            </View>
-          ) : (
-            <TextInput
-              style={estilos.inputMensagem}
-              placeholder="Ex: Mercado 142.50 ou 'Qual meu saldo?'"
-              placeholderTextColor="#64748b"
-              value={texto}
-              onChangeText={setTexto}
-              onSubmitEditing={() => enviarMensagemTexto()}
+        {/* Conteúdo da Aba Selecionada */}
+        <View style={{ flex: 1 }}>
+          {abaAtiva === "dashboard" ? (
+            <VisaoDashboard
+              usuario={usuario}
+              onEditarTransacao={(t) => setTransacaoEditando(t)}
+              onExcluirTransacao={handleExcluirTransacao}
+              onSaldoAtualizado={recarregarUsuario}
+              onIrParaChat={(cmd) => {
+                setAbaAtiva("chat");
+                if (cmd) enviarMensagemTexto(cmd);
+              }}
             />
-          )}
-
-          {texto.trim().length > 0 ? (
-            <Pressable
-              style={estilos.botaoRedondo}
-              onPress={() => enviarMensagemTexto()}
-            >
-              <Ionicons name="send" size={19} color="#042f2e" />
-            </Pressable>
+          ) : abaAtiva === "perfil" ? (
+            renderizarPerfil()
           ) : (
+            <View style={{ flex: 1 }}>
+              {carregandoInicial ? (
+                <View style={estilos.centroContainer}>
+                  <ActivityIndicator size="large" color={CORES.verde} />
+                </View>
+              ) : (
+                <FlatList
+                  ref={flatListRef}
+                  data={mensagens}
+                  keyExtractor={(item) => String(item.id)}
+                  contentContainerStyle={estilos.listaConteudo}
+                  keyboardDismissMode="interactive"
+                  keyboardShouldPersistTaps="handled"
+                  onContentSizeChange={() =>
+                    flatListRef.current?.scrollToEnd({ animated: true })
+                  }
+                  ListHeaderComponent={
+                    temMais ? (
+                      <Pressable
+                        style={estilos.botaoCarregarMais}
+                        onPress={carregarMensagensAnteriores}
+                        disabled={carregandoAnteriores}
+                      >
+                        <Text style={estilos.textoCarregarMais}>
+                          Ver anteriores
+                        </Text>
+                      </Pressable>
+                    ) : null
+                  }
+                  renderItem={({ item }) => (
+                    <BolhaMensagem
+                      mensagem={item}
+                      onEditarTransacao={(t) => setTransacaoEditando(t)}
+                      onExcluirTransacao={handleExcluirTransacao}
+                    />
+                  )}
+                  ListFooterComponent={
+                    assistenteDigitando ? (
+                      <View style={estilos.digitandoRow}>
+                        <ActivityIndicator size="small" color={CORES.verde} />
+                      </View>
+                    ) : null
+                  }
+                />
+              )}
+
+              {/* Sugestões discretas horizontais */}
+              <View style={estilos.sugestoesWrapper}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={estilos.sugestoesScroll}
+                >
+                  {SUGESTOES.map((s) => (
+                    <Pressable
+                      key={s.label}
+                      style={estilos.pilulaSugestao}
+                      onPress={() => enviarMensagemTexto(s.comando)}
+                    >
+                      <Text style={estilos.textoSugestao}>{s.label}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+
+              {/* Barra Cápsula Única estilo WhatsApp / Instagram Direct que sobe junto com o teclado */}
+              <View
+                style={[
+                  estilos.inputWrapper,
+                  tecladoAberto && { paddingBottom: 10 },
+                ]}
+              >
+                <View style={estilos.capsulaInput}>
+                  {gravando ? (
+                    <View style={estilos.gravandoRow}>
+                      <View style={estilos.bolinhaGravando} />
+                      <Text style={estilos.textoGravando}>
+                        Gravando... {segundosGravacao}s
+                      </Text>
+                    </View>
+                  ) : (
+                    <TextInput
+                      style={estilos.inputTexto}
+                      placeholder="Mensagem..."
+                      placeholderTextColor={CORES.textoSecundario}
+                      value={texto}
+                      onChangeText={setTexto}
+                      onSubmitEditing={() => enviarMensagemTexto()}
+                    />
+                  )}
+
+                  {texto.trim().length > 0 ? (
+                    <Pressable
+                      style={estilos.botaoEnviarDentro}
+                      onPress={() => enviarMensagemTexto()}
+                    >
+                      <Text style={estilos.textoBotaoEnviar}>Enviar</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      style={[
+                        estilos.botaoMicDentro,
+                        gravando && { backgroundColor: CORES.perigo },
+                      ]}
+                      onPress={
+                        gravando
+                          ? pararEEnviarGravacaoAudio
+                          : iniciarGravacaoAudio
+                      }
+                    >
+                      <Ionicons
+                        name={gravando ? "stop" : "mic-outline"}
+                        size={20}
+                        color="#FFFFFF"
+                      />
+                    </Pressable>
+                  )}
+                </View>
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Bottom Tab Bar Nativa (oculta automaticamente quando o teclado está aberto igual ao WhatsApp/Instagram DM) */}
+        {!tecladoAberto ? (
+          <View style={estilos.bottomTabBar}>
             <Pressable
-              style={[
-                estilos.botaoRedondo,
-                gravando && estilos.botaoGravandoAtivo,
-              ]}
-              onPress={
-                gravando ? pararEEnviarGravacaoAudio : iniciarGravacaoAudio
-              }
+              style={estilos.tabItem}
+              onPress={() => setAbaAtiva("dashboard")}
             >
               <Ionicons
-                name={gravando ? "stop" : "mic"}
-                size={22}
-                color={gravando ? "#fff" : "#042f2e"}
+                name={abaAtiva === "dashboard" ? "home" : "home-outline"}
+                size={24}
+                color={
+                  abaAtiva === "dashboard" ? "#FFFFFF" : CORES.textoSecundario
+                }
               />
+              <Text
+                style={[
+                  estilos.tabLabel,
+                  abaAtiva === "dashboard" && estilos.tabLabelAtivo,
+                ]}
+              >
+                Início
+              </Text>
             </Pressable>
-          )}
-        </View>
+
+            <Pressable
+              style={estilos.tabItem}
+              onPress={() => setAbaAtiva("chat")}
+            >
+              <Ionicons
+                name={
+                  abaAtiva === "chat"
+                    ? "chatbubble-ellipses"
+                    : "chatbubble-ellipses-outline"
+                }
+                size={24}
+                color={abaAtiva === "chat" ? "#FFFFFF" : CORES.textoSecundario}
+              />
+              <Text
+                style={[
+                  estilos.tabLabel,
+                  abaAtiva === "chat" && estilos.tabLabelAtivo,
+                ]}
+              >
+                Chat
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={estilos.tabItem}
+              onPress={() => setAbaAtiva("perfil")}
+            >
+              <Ionicons
+                name={abaAtiva === "perfil" ? "person" : "person-outline"}
+                size={24}
+                color={
+                  abaAtiva === "perfil" ? "#FFFFFF" : CORES.textoSecundario
+                }
+              />
+              <Text
+                style={[
+                  estilos.tabLabel,
+                  abaAtiva === "perfil" && estilos.tabLabelAtivo,
+                ]}
+              >
+                Conta
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
       </KeyboardAvoidingView>
 
       <ModalEditarTransacao
@@ -447,40 +606,25 @@ export default function TelaChat() {
 const estilos = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#0b141a",
+    backgroundColor: CORES.fundo,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#202c33",
-    paddingHorizontal: 14,
+    paddingHorizontal: 20,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#2a3942",
     gap: 10,
   },
-  avatarAssistente: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(16, 185, 129, 0.14)",
-    alignItems: "center",
-    justifyContent: "center",
+  logoMini: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
   },
-  nomeHeader: {
-    color: "#f8fafc",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  subtituloHeader: {
-    color: "#94a3b8",
-    fontSize: 12,
-    marginTop: 1,
-  },
-  botaoHeader: {
-    padding: 8,
-    borderRadius: 10,
-    backgroundColor: "#111b21",
+  tituloHeader: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "800",
+    letterSpacing: -0.4,
   },
   centroContainer: {
     flex: 1,
@@ -490,119 +634,165 @@ const estilos = StyleSheet.create({
   listaConteudo: {
     paddingVertical: 12,
   },
-  boasVindasCard: {
-    alignSelf: "center",
-    backgroundColor: "#182229",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    marginBottom: 12,
-    maxWidth: "88%",
-    borderWidth: 1,
-    borderColor: "#2a3942",
-  },
-  boasVindasTexto: {
-    color: "#cbd5e1",
-    fontSize: 13,
-    textAlign: "center",
-  },
   botaoCarregarMais: {
     alignSelf: "center",
-    backgroundColor: "#202c33",
-    paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 16,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   textoCarregarMais: {
-    color: "#10b981",
+    color: CORES.textoSecundario,
     fontSize: 12,
     fontWeight: "600",
   },
-  digitandoContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 18,
+  digitandoRow: {
+    paddingHorizontal: 22,
     paddingVertical: 8,
+    alignItems: "flex-start",
   },
-  digitandoTexto: {
-    color: "#94a3b8",
-    fontSize: 13,
-    fontStyle: "italic",
+  sugestoesWrapper: {
+    paddingVertical: 6,
   },
-  barraChips: {
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: "#1f2c34",
-    backgroundColor: "#111b21",
-  },
-  scrollChips: {
-    paddingHorizontal: 12,
+  sugestoesScroll: {
+    paddingHorizontal: 16,
     gap: 8,
   },
-  chipAcao: {
-    backgroundColor: "#202c33",
-    paddingHorizontal: 12,
+  pilulaSugestao: {
+    backgroundColor: CORES.fundoElevado,
+    paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#2a3942",
   },
-  textoChipAcao: {
-    color: "#e2e8f0",
-    fontSize: 12,
+  textoSugestao: {
+    color: CORES.textoSecundario,
+    fontSize: 13,
     fontWeight: "600",
   },
-  barraEntrada: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
+  inputWrapper: {
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    backgroundColor: "#111b21",
-    gap: 8,
   },
-  inputMensagem: {
+  capsulaInput: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: CORES.fundoElevado,
+    borderRadius: 26,
+    paddingLeft: 18,
+    paddingRight: 6,
+    height: 48,
+  },
+  inputTexto: {
     flex: 1,
-    backgroundColor: "#202c33",
-    color: "#f8fafc",
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
+    color: "#FFFFFF",
     fontSize: 15,
-    borderWidth: 1,
-    borderColor: "#2a3942",
+    height: "100%",
   },
-  gravandoBox: {
+  gravandoRow: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(239, 68, 68, 0.15)",
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
     gap: 8,
   },
-  pontoVermelho: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#ef4444",
+  bolinhaGravando: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: CORES.perigo,
   },
-  gravandoTexto: {
-    color: "#fca5a5",
+  textoGravando: {
+    color: CORES.perigo,
     fontSize: 14,
     fontWeight: "600",
   },
-  botaoRedondo: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: "#10b981",
+  botaoEnviarDentro: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  textoBotaoEnviar: {
+    color: CORES.verde,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  botaoMicDentro: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
   },
-  botaoGravandoAtivo: {
-    backgroundColor: "#ef4444",
+  bottomTabBar: {
+    flexDirection: "row",
+    backgroundColor: CORES.fundo,
+    borderTopWidth: 0.5,
+    borderTopColor: CORES.divisor,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === "ios" ? 22 : 10,
+  },
+  tabItem: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+  },
+  tabLabel: {
+    color: CORES.textoSecundario,
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  tabLabelAtivo: {
+    color: "#FFFFFF",
+  },
+  perfilContainer: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+  },
+  perfilTopo: {
+    alignItems: "center",
+    marginBottom: 36,
+  },
+  avatarGrande: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: CORES.fundoElevado,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  inicialAvatar: {
+    color: CORES.dourado,
+    fontSize: 28,
+    fontWeight: "800",
+  },
+  nomePerfil: {
+    color: "#FFFFFF",
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  emailPerfil: {
+    color: CORES.textoSecundario,
+    fontSize: 14,
+    marginTop: 2,
+  },
+  menuLista: {
+    gap: 4,
+  },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 16,
+    gap: 14,
+    borderBottomWidth: 0.5,
+    borderBottomColor: CORES.divisor,
+  },
+  menuTitulo: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  menuSub: {
+    color: CORES.textoSecundario,
+    fontSize: 13,
+    marginTop: 2,
   },
 });
