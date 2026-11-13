@@ -1,11 +1,23 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+import secrets
+from datetime import datetime, timedelta
 
+from models.chat import MensagemChat
+from models.financas import Financa, IdentidadeExterna, Usuario
+from schemas.auth import (
+    RequestEsqueciSenha,
+    RequestGoogleAuth,
+    RequestLogin,
+    RequestRedefinirSenha,
+    RequestRefresh,
+    RequestRegistro,
+    ResponseTokens,
+    ResponseUsuarioAuth
+)
 from database import get_db
-from models.financas import Usuario, IdentidadeExterna
-from schemas.auth import ResponseTokens, ResponseUsuarioAuth, RequestLogin, RequestRefresh, RequestGoogleAuth, RequestRegistro
 from repositories.integracao_usuario_repository import buscar_integracao_principal, selecionar_integracao_principal
-from services.auth_service import criar_access_token, criar_refresh_token, gerar_hash_senha, verificar_senha, validar_token_google, decodificar_token
+from services.auth_service import criar_access_token, criar_refresh_token, gerar_hash_senha, verificar_senha, validar_token_google, decodificar_token, enviar_email_recuperacao
 from dependencies.identidade import obter_usuario_id_atual
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
@@ -24,7 +36,6 @@ def montar_resposta_tokens(usuario: Usuario) -> ResponseTokens:
             provedor_principal=provedor_principal,
         ),
     )
-
 
 @auth_router.post("/registro", response_model=ResponseTokens, status_code=201)
 async def registrar(dados: RequestRegistro, db: Session = Depends(get_db)):
@@ -161,9 +172,61 @@ async def me(usuario_id: int = Depends(obter_usuario_id_atual), db: Session = De
         provedor_principal= buscar_integracao_principal(usuario.id)
     )   
 
+@auth_router.post("/esqueci-senha")
+async def esqueci_senha(dados: RequestEsqueciSenha, db: Session = Depends(get_db)):
+    email = dados.email.lower().strip()
+    usuario = db.query(Usuario).filter(Usuario.email == email, Usuario.ativo.is_(True)).first()
 
+    if usuario:
+        codigo = f"{secrets.randbelow(900000) + 100000}"
+        usuario.codigo_recuperacao = codigo
+        usuario.codigo_recuperacao_expira_em = datetime.now() + timedelta(minutes=15)
+        db.commit()
+        enviar_email_recuperacao(email, codigo)
 
+    return {"mensagem": "Se o email estiver cadastrado, enviamos um código de 6 digitos"}
 
+@auth_router.post("/redefinir-senha")
+async def redefinri_senha(dados: RequestRedefinirSenha, db: Session = Depends(get_db)):
+    email = dados.email.lower().strip()
+    usuario = db.query(Usuario).filter(Usuario.email == email, Usuario.ativo.is_(True)).first()
+
+    if (
+            not usuario
+            or not usuario.codigo_recuperacao
+            or usuario.codigo_recuperacao != dados.codigo.strip()
+            or not usuario.codigo_recuperacao_expira_em
+            or usuario.codigo_recuperacao_expira_em < datetime.now()
+        ):
+            raise HTTPException(status_code=400, detail="Código inválido ou expirado")
+    
+    usuario.senha_hash = gerar_hash_senha(dados.nova_senha)
+    usuario.codigo_recuperacao = None
+    usuario.codigo_recuperacao_expira_em = None
+    db.commit()
+    return {"mensagem": "Senha redefinida com sucesso"}
+
+@auth_router.delete("/me")
+async def excluir_minha_conta(usuario_id: int = Depends(obter_usuario_id_atual), db: Session = Depends(get_db)):
+    usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
+
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    db.query(MensagemChat).filter(MensagemChat.usuario_id == usuario_id).delete()
+    db.query(Financa).filter(Financa.usuario_id == usuario_id).delete()
+    db.query(IdentidadeExterna).filter(IdentidadeExterna.usuario_id == usuario_id).delete()
+
+    usuario.ativo = False
+    usuario.nome = "Conta Excluída"
+    usuario.email = f"excluido_{usuario.id}@anonimo.local"
+    usuario.senha_hash = None
+    usuario.saldo = 0.0
+    usuario.codigo_recuperacao = None
+    usuario.codigo_recuperacao_expira_em = None
+
+    db.commit()
+    return{"mensagem": "Conta excluída com sucesso"}
     
 
 

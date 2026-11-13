@@ -93,7 +93,7 @@ async def registrar_texto_local(
     return salvar_financa(db, usuario_id, dados_validados)
 
 
-async def registrar_conforme_integracao(texto, usuario_id, db):
+async def registrar_conforme_integracao(texto, usuario_id, db): 
     provedor = buscar_integracao_principal(usuario_id)
 
     if provedor == "local":
@@ -108,8 +108,9 @@ def validar_dados(dados):
     if not isinstance(dados, dict):
             raise HTTPException(status_code=502, detail="Resposta inváida da extração")
 
-    if dados.get("tipo") != "GASTO":
-        raise HTTPException(status_code=422, detail="MVP aceita somente gastos")
+    tipo = dados.get("tipo")
+    if tipo not in {"GASTO", "GANHO"}:
+        raise HTTPException(status_code=422, detail="Tipo deve ser GASTO ou GANHO")
 
     try:
         valor = float(dados["valor"])
@@ -130,7 +131,7 @@ def validar_dados(dados):
     "valor": valor,
     "categoria": dados.get("categoria") or "Outros",
     "descricao": dados.get("descricao") or "Sem descrição",
-    "tipo": "GASTO",
+    "tipo": tipo,
     "data": data_obj}
     
 
@@ -153,7 +154,10 @@ def salvar_financa(db: Session, usuario_id: int, dados: dict, referencia_externa
 
     usuario.proximo_numero_transacao += 1
 
-    usuario.saldo -= dados["valor"]
+    if dados["tipo"] == "GANHO":
+        usuario.saldo += dados["valor"]
+    else:
+        usuario.saldo -= dados["valor"]
 
     db.add(novo_item)
     db.commit()
@@ -280,11 +284,6 @@ async def atualizar_transacao(
     if not transacao:
         raise HTTPException(status_code=404, detail="Transação não encontrada")
 
-    if transacao.tipo != "GASTO":
-        raise HTTPException(
-            status_code=422,
-            detail="Edição de ganhos ainda indisponível",
-        )
 
     texto = transacao_nova.texto
 
@@ -308,13 +307,20 @@ async def atualizar_transacao(
     if not usuario:
         raise HTTPException(status_code=404, detail='Usuário não encontrado')
 
-    usuario.saldo += transacao.valor
+    if transacao.tipo == "GANHO":
+        usuario.saldo -= transacao.valor
+    else:
+        usuario.saldo += transacao.valor
 
     transacao.valor = dados_validados["valor"]
     transacao.categoria = dados_validados["categoria"]
     transacao.descricao = dados_validados["descricao"]
+    transacao.tipo = dados_validados["tipo"]
 
-    usuario.saldo -= transacao.valor
+    if transacao.tipo == "GANHO":
+        usuario.saldo += transacao.valor
+    else:
+        usuario.saldo -= transacao.valor
 
     db.commit()
     db.refresh(transacao)
@@ -350,22 +356,26 @@ def resumo(
     ).all()
 
     gasto_total = 0
-
+    ganho_total = 0
     categorias = {}
 
     for i in dados:
-        gasto_total += i.valor
-
-        if i.categoria not in categorias:
-            categorias[i.categoria] = i.valor
+        if i.tipo == "GANHO":
+            ganho_total += i.valor
         else:
-            categorias[i.categoria] += i.valor
+            gasto_total += i.valor
+            if i.categoria not in categorias:
+                categorias[i.categoria] = i.valor
+            else:
+                categorias[i.categoria] += i.valor
 
 
     return {
         "mes": mes,
         "ano": ano,
         "gasto_total": gasto_total,
+        "ganho_total": ganho_total,
+        "saldo_mes": ganho_total - gasto_total,
         "categorias": categorias
     }
 

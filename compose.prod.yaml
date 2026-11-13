@@ -62,6 +62,10 @@ services:
       MINHAS_ECONOMIAS_MCP_URL: ${MINHAS_ECONOMIAS_MCP_URL:-}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?TOKEN_ENCRYPTION_KEY obrigatoria}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY obrigatoria}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-FinaceAi <onboarding@resend.dev>}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
