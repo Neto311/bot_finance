@@ -6,6 +6,7 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -62,6 +63,9 @@ export default function TelaPrincipal() {
   const [transacaoEditando, setTransacaoEditando] =
     useState<DadosTransacaoCard | null>(null);
   const [modalIntegracaoVisivel, setModalIntegracaoVisivel] = useState(false);
+  const [modalExcluirVisivel, setModalExcluirVisivel] = useState(false);
+  const [excluindoConta, setExcluindoConta] = useState(false);
+  const [erroExcluir, setErroExcluir] = useState<string | null>(null);
 
   const flatListRef = useRef<FlatList<MensagemChat>>(null);
 
@@ -322,28 +326,8 @@ export default function TelaPrincipal() {
         <Pressable
           style={estilos.menuItem}
           onPress={() => {
-            Alert.alert(
-              "Excluir conta",
-              "Tem certeza que deseja excluir permanentemente sua conta e todos os seus dados financeiros?",
-              [
-                { text: "Cancelar", style: "cancel" },
-                {
-                  text: "Excluir conta",
-                  style: "destructive",
-                  onPress: async () => {
-                    try {
-                      await apiAuth.excluirMinhaConta();
-                      await sair();
-                    } catch (e: any) {
-                      Alert.alert(
-                        "Erro",
-                        e?.message || "Não foi possível excluir sua conta."
-                      );
-                    }
-                  },
-                },
-              ]
-            );
+            setErroExcluir(null);
+            setModalExcluirVisivel(true);
           }}
         >
           <Ionicons name="trash-outline" size={22} color={CORES.perigo} />
@@ -599,6 +583,63 @@ export default function TelaPrincipal() {
         onFechar={() => setModalIntegracaoVisivel(false)}
         onAtualizado={recarregarUsuario}
       />
+
+      <Modal visible={modalExcluirVisivel} transparent animationType="fade">
+        <Pressable
+          style={estilos.modalOverlay}
+          onPress={() => !excluindoConta && setModalExcluirVisivel(false)}
+        >
+          <Pressable
+            style={estilos.modalExcluirSheet}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={estilos.modalExcluirTitulo}>Excluir conta</Text>
+            <Text style={estilos.modalExcluirTexto}>
+              Tem certeza que deseja excluir permanentemente sua conta e todos os
+              seus dados financeiros?
+            </Text>
+            {erroExcluir ? (
+              <Text style={estilos.modalExcluirErro}>{erroExcluir}</Text>
+            ) : null}
+            <View style={estilos.modalExcluirBotoes}>
+              <Pressable
+                style={[estilos.modalBotao, estilos.modalBotaoCancelar]}
+                onPress={() => setModalExcluirVisivel(false)}
+                disabled={excluindoConta}
+              >
+                <Text style={estilos.modalBotaoCancelarTexto}>Cancelar</Text>
+              </Pressable>
+              <Pressable
+                style={[estilos.modalBotao, estilos.modalBotaoExcluir]}
+                disabled={excluindoConta}
+                onPress={async () => {
+                  setExcluindoConta(true);
+                  setErroExcluir(null);
+                  try {
+                    await apiAuth.excluirMinhaConta();
+                    setModalExcluirVisivel(false);
+                    await sair();
+                  } catch (e: any) {
+                    setErroExcluir(
+                      e?.message || "Não foi possível excluir sua conta."
+                    );
+                  } finally {
+                    setExcluindoConta(false);
+                  }
+                }}
+              >
+                {excluindoConta ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={estilos.modalBotaoExcluirTexto}>
+                    Excluir conta
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -794,5 +835,59 @@ const estilos = StyleSheet.create({
     color: CORES.textoSecundario,
     fontSize: 13,
     marginTop: 2,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    padding: 24,
+  },
+  modalExcluirSheet: {
+    backgroundColor: CORES.fundoElevado,
+    borderRadius: 20,
+    padding: 22,
+    gap: 12,
+  },
+  modalExcluirTitulo: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  modalExcluirTexto: {
+    color: CORES.textoSecundario,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  modalExcluirErro: {
+    color: CORES.perigo,
+    fontSize: 13,
+  },
+  modalExcluirBotoes: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 6,
+  },
+  modalBotao: {
+    flex: 1,
+    height: 46,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalBotaoCancelar: {
+    backgroundColor: CORES.superficieInput,
+  },
+  modalBotaoCancelarTexto: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  modalBotaoExcluir: {
+    backgroundColor: CORES.perigo,
+  },
+  modalBotaoExcluirTexto: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
   },
 });
