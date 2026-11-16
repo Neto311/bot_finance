@@ -33,6 +33,8 @@ from schemas.financas import (
 from services.finance_service_factory import obter_finance_service
 from services.groq_client import extrair_audio, extrair_colunas
 from repositories.integracao_usuario_repository import buscar_integracao_principal
+from services.parcelamento_service import salvar_parcelamento
+from services.recorrencia_service import processar_recorrencias_pendentes
 
 router = APIRouter(dependencies=[Depends(validar_servico)])
 
@@ -90,6 +92,10 @@ async def registrar_texto_local(
     dados_ia = extrair_colunas(texto, [])
     dados_validados = validar_dados(dados_ia)
 
+    if dados_validados["parcelas_total"] > 1:
+        parcelas = salvar_parcelamento(db, usuario_id, dados_validados)
+        return parcelas[0]
+    
     return salvar_financa(db, usuario_id, dados_validados)
 
 
@@ -127,12 +133,20 @@ def validar_dados(dados):
     except (TypeError, ValueError):
         raise HTTPException(status_code=422, detail="Data inválida") from None
 
+    try:
+        parcelas_total = max(int(dados.get("parcelas_total") or 1), 1)
+    except (TypeError, ValueError):
+        parcelas_total = 1
+
     return {
     "valor": valor,
     "categoria": dados.get("categoria") or "Outros",
     "descricao": dados.get("descricao") or "Sem descrição",
     "tipo": tipo,
-    "data": data_obj}
+    "data": data_obj,
+    "parcelas_total": parcelas_total,
+    "valor_eh_parcela": bool(dados.get("valor_eh_parcela", False))
+    }
     
 
 def salvar_financa(db: Session, usuario_id: int, dados: dict, referencia_externa: str | None = None) -> model.Financa: 
@@ -349,6 +363,8 @@ def resumo(
     usuario_id: int = Depends(obter_usuario_id_atual),
     db: Session = Depends(get_db)):
 
+    processar_recorrencias_pendentes(db, usuario_id)
+
     dados = db.query(model.Financa).filter(
         extract('month', model.Financa.data) == mes,
         extract('year', model.Financa.data) == ano,
@@ -532,3 +548,95 @@ def obter_transacoes_personalizado_local(
         model.Financa.data <= fim,).order_by(model.Financa.numero_usuario.desc()).all()
 
     return consulta
+
+@router.get("/recorrencias")
+def listar_recorrencias(
+    usuario_id: int = Depends(obter_usuario_id_atual),
+    db: Session = Depends(get_db),
+):
+    processar_recorrencias_pendentes(db, usuario_id)
+    return (
+        db.query(model.Recorrencia)
+        .filter(model.Recorrencia.usuario_id == usuario_id)
+        .order_by(model.Recorrencia.dia_vencimento.asc())
+        .all()
+    )
+
+
+@router.patch("/recorrencias/{recorrencia_id}/toggle")
+def alternar_recorrencia(
+    recorrencia_id: int,
+    usuario_id: int = Depends(obter_usuario_id_atual),
+    db: Session = Depends(get_db),
+):
+    rec = (
+        db.query(model.Recorrencia)
+        .filter(
+            model.Recorrencia.id == recorrencia_id,
+            model.Recorrencia.usuario_id == usuario_id,
+        )
+        .first()
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recorrência não encontrada")
+    rec.ativa = not rec.ativa
+    db.commit()
+    db.refresh(rec)
+    return rec
+
+
+@router.delete("/recorrencias/{recorrencia_id}")
+def excluir_recorrencia(
+    recorrencia_id: int,
+    usuario_id: int = Depends(obter_usuario_id_atual),
+    db: Session = Depends(get_db),
+):
+    rec = (
+        db.query(model.Recorrencia)
+        .filter(
+            model.Recorrencia.id == recorrencia_id,
+            model.Recorrencia.usuario_id == usuario_id,
+        )
+        .first()
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recorrência não encontrada")
+    db.delete(rec)
+    db.commit()
+    return {"mensagem": "Recorrência excluída"}
+
+
+@router.delete("/financas/parcelamento/{grupo_id}")
+def excluir_parcelamento(
+    grupo_id: str,
+    usuario_id: int = Depends(obter_usuario_id_atual),
+    db: Session = Depends(get_db),
+):
+    parcelas = (
+        db.query(model.Financa)
+        .filter(
+            model.Financa.usuario_id == usuario_id,
+            model.Financa.grupo_parcelamento_id == grupo_id,
+        )
+        .all()
+    )
+    if not parcelas:
+        raise HTTPException(status_code=404, detail="Parcelamento não encontrado")
+
+    usuario = (
+        db.query(model.Usuario)
+        .filter(model.Usuario.id == usuario_id)
+        .with_for_update()
+        .first()
+    )
+    primeira = next((p for p in parcelas if p.parcela_atual == 1), parcelas[0])
+    if usuario:
+        if primeira.tipo == "GANHO":
+            usuario.saldo -= primeira.valor
+        else:
+            usuario.saldo += primeira.valor
+
+    for p in parcelas:
+        db.delete(p)
+    db.commit()
+    return {"mensagem": f"{len(parcelas)} parcelas excluídas"}

@@ -321,6 +321,35 @@ export const apiFinancas = {
       method: "DELETE",
     }),
 
+  excluirParcelamento: (grupoId: string) =>
+    requisicaoApi(`/financas/parcelamento/${grupoId}`, {
+      method: "DELETE",
+    }),
+
+  listarRecorrencias: () =>
+    requisicaoApi<
+      Array<{
+        id: number;
+        valor: number;
+        categoria: string;
+        descricao: string;
+        tipo: string;
+        dia_vencimento: number;
+        ativa: boolean;
+        ultima_competencia?: string | null;
+      }>
+    >("/recorrencias"),
+
+  alternarRecorrencia: (id: number) =>
+    requisicaoApi(`/recorrencias/${id}/toggle`, {
+      method: "PATCH",
+    }),
+
+  excluirRecorrencia: (id: number) =>
+    requisicaoApi(`/recorrencias/${id}`, {
+      method: "DELETE",
+    }),
+
   selecionarIntegracao: (provedor: "local" | "minhas_economias") =>
     requisicaoApi("/usuarios/integracao-principal", {
       method: "POST",

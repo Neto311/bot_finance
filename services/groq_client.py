@@ -20,6 +20,8 @@ Extraia exatamente estes campos:
 - subcategoria: texto ou null
 - descricao: texto
 - tipo: GASTO ou GANHO
+- parcelas_total: número inteiro >= 1 (use 1 se não for parcelado)
+- valor_eh_parcela: true ou false (true se o valor informado for de cada parcela; false se for o valor total)
 - data: data no formato YYYY-MM-DD
 
 Regras para tipo:
@@ -39,6 +41,11 @@ Regras gerais:
 - Nunca invente valores.
 - Se a descrição não estiver clara, produza uma descrição curta baseada no texto.
 - Se algum dado não puder ser identificado, use null.
+
+Regras de parcelamento:
+- Se não houver menção a parcelas, use parcelas_total = 1 e valor_eh_parcela = false.
+- Ex.: "comprei tênis de 600 em 3x" -> valor: 600, parcelas_total: 3, valor_eh_parcela: false.
+- Ex.: "celular 10x de 250" -> valor: 250, parcelas_total: 10, valor_eh_parcela: true.
 
 Regras de data:
 - A data atual será informada junto da mensagem do usuário.
@@ -75,6 +82,8 @@ Opções válidas para o campo intencao:
 - AJUDA: quando o usuário apenas cumprimenta ("oi", "bom dia"), pede ajuda de como usar o app ou envia algo fora do contexto financeiro.
 - REGISTRAR_GANHO: quando o usuário relata uma receita, salário, venda, pix recebido ou entrada de dinheiro com valor (ex: "recebi 3500 de salário", "ganhei 200 de freelance", "pix de 150").
 - ANALISE_FINANCEIRA: quando o usuário pede análise, diagnóstico, dicas de economia ou avaliação dos seus gastos do mês (ex: "analise minhas finanças", "onde posso economizar?", "como estão meus gastos?").
+- REGISTRAR_RECORRENCIA: quando o usuário relata uma assinatura, mensalidade, conta fixa ou ganho recorrente mensal (ex: "assinatura Netflix 55,90 todo dia 10", "academia 120 por mês", "salário 5000 todo dia 5").
+- LISTAR_RECORRENCIAS: quando o usuário pede para ver suas assinaturas ou gastos/ganhos recorrentes cadastrados (ex: "minhas assinaturas", "quais meus gastos fixos?", "ver recorrências").
 
 Regras para mes e ano:
 - A data atual (YYYY-MM-DD) será informada junto da mensagem.
@@ -90,6 +99,16 @@ Regras para valor:
 Regras para resposta_curta:
 - Quando a intenção for AJUDA, escreva uma resposta curta, simpática e direta em português explicando que o usuário pode digitar ou gravar áudio de um gasto (ex: "Uber 25 reais"), consultar saldo, pedir o resumo do mês ou listar os últimos gastos.
 - Para todas as outras intenções, use null.
+"""
+
+PROMPT_RECORRENCIA = """Você é um extrator de assinaturas e recorrências financeiras mensais.
+Responda APENAS com um objeto JSON válido, sem Markdown e sem explicações.
+Extraia exatamente estes campos:
+- valor: número positivo
+- categoria: texto (ex: Assinaturas, Moradia, Saúde, Transporte, Alimentação, Salário, Outros)
+- descricao: texto curto (ex: Netflix, Academia, Aluguel, Salário)
+- tipo: GASTO ou GANHO
+- dia_vencimento: número inteiro de 1 a 31 (se não informado, use o dia da data atual)
 """
 
 def extrair_colunas(texto_usuario: str, catalogo_categorias=None):
@@ -165,3 +184,17 @@ def gerar_analise_financeira(dados_resumo: dict, saldo_atual: float, transacoes:
         ],
     )
     return (completion.choices[0].message.content or "").strip()
+
+def extrair_recorrencia(texto_usuario: str):
+    data_atual = date.today().isoformat()
+    completion = client.chat.completions.create(
+        model="openai/gpt-oss-120b",
+        messages=[
+            {"role": "system", "content": PROMPT_RECORRENCIA},
+            {"role": "user", "content": f"Data atual: {data_atual}\nTexto: {texto_usuario}"},
+        ],
+        temperature=0,
+        max_completion_tokens=512,
+        response_format={"type": "json_object"},
+    )
+    return json.loads(completion.choices[0].message.content)

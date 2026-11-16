@@ -18,6 +18,10 @@ class Financa(Base):
     referencia_externa = Column(String, nullable=True, index=True)
     numero_usuario = Column(Integer, nullable=False)
     origem = Column(String, nullable=True)
+    grupo_parcelamento_id = Column(String(36), nullable=True, index=True)
+    parcela_atual = Column(Integer, nullable=True)
+    parcela_total = Column(Integer, nullable=True)
+    recorrencia_id = Column(Integer, ForeignKey("recorrencias.id", ondelete="SET NULL"), nullable=True, index=True)
 
 
 class Usuario(Base):
@@ -48,3 +52,17 @@ class IdentidadeExterna(Base):
     identificador_externo = Column(String, nullable=False)
     criado_em = Column(DateTime, default=datetime.now, nullable=False)
 
+
+class Recorrencia(Base):
+    __tablename__ = "recorrencias"
+
+    id = Column(Integer, primary_key=True, index=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False, index=True)
+    valor = Column(Float, nullable=False)
+    categoria = Column(String, nullable=False)
+    descricao = Column(String, nullable=False)
+    tipo = Column(String, nullable=False, default="GASTO")
+    dia_vencimento = Column(Integer, nullable=False)
+    ativa = Column(Boolean, nullable=False, default=True)
+    ultima_competencia  = Column(String(7), nullable=True)
+    criado_em = Column(DateTime, default=datetime.now, nullable=False)

@@ -12,7 +12,11 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { apiFinancas } from "../services/api";
-import { DadosTransacaoCard, UsuarioAuth } from "../types/api";
+import {
+  DadosTransacaoCard,
+  RecorrenciaItem,
+  UsuarioAuth,
+} from "../types/api";
 import { CORES, iconePorCategoria } from "../theme/colors";
 
 interface Props {
@@ -61,6 +65,7 @@ export function VisaoDashboard({
   const [ganhoTotal, setGanhoTotal] = useState(0);
   const [categorias, setCategorias] = useState<Record<string, number>>({});
   const [lancamentosMes, setLancamentosMes] = useState<DadosTransacaoCard[]>([]);
+  const [recorrencias, setRecorrencias] = useState<RecorrenciaItem[]>([]);
 
   // Filtros por categoria / busca por data ou descrição
   const [categoriaFiltro, setCategoriaFiltro] = useState<string | null>(null);
@@ -73,9 +78,10 @@ export function VisaoDashboard({
 
   const carregarDados = useCallback(async () => {
     try {
-      const [resumoResp, listaResp] = await Promise.all([
+      const [resumoResp, listaResp, recsResp] = await Promise.all([
         apiFinancas.obterResumoMes(mes, ano),
         apiFinancas.listarPorMes(mes, ano),
+        apiFinancas.listarRecorrencias().catch(() => []),
       ]);
       setGastoTotal(Number(resumoResp?.gasto_total || 0));
       setGanhoTotal(Number(resumoResp?.ganho_total || 0));
@@ -84,6 +90,7 @@ export function VisaoDashboard({
         (a, b) => (b.id || 0) - (a.id || 0)
       );
       setLancamentosMes(ordenados);
+      setRecorrencias(recsResp || []);
     } catch {
       // silencioso
     } finally {
@@ -356,7 +363,28 @@ export function VisaoDashboard({
                     <Text style={estilos.subTransacao}>
                       {item.tipo === "GANHO" ? "Entrada" : item.categoria} •{" "}
                       {item.data}
+                      {item.parcela_total && item.parcela_total > 1
+                        ? ` • Parcela ${item.parcela_atual}/${item.parcela_total}`
+                        : item.recorrencia_id
+                        ? " • Assinatura"
+                        : ""}
                     </Text>
+                    {item.grupo_parcelamento_id ? (
+                      <Pressable
+                        onPress={async () => {
+                          await apiFinancas.excluirParcelamento(
+                            item.grupo_parcelamento_id!
+                          );
+                          await onSaldoAtualizado?.();
+                          carregarDados();
+                        }}
+                        hitSlop={6}
+                      >
+                        <Text style={estilos.linkParcelamento}>
+                          Excluir todas as {item.parcela_total} parcelas
+                        </Text>
+                      </Pressable>
+                    ) : null}
                   </View>
 
                   <View style={estilos.direitaTransacao}>
@@ -384,6 +412,76 @@ export function VisaoDashboard({
                     </Pressable>
                   </View>
                 </Pressable>
+              ))
+            )}
+          </View>
+
+          {/* Assinaturas e Recorrentes */}
+          <View style={estilos.secao}>
+            <Text style={estilos.tituloSecao}>Assinaturas e Recorrentes</Text>
+            {recorrencias.length === 0 ? (
+              <Text style={estilos.textoVazio}>
+                Nenhuma assinatura cadastrada. No chat, tente: "Netflix 55,90 todo dia 10".
+              </Text>
+            ) : (
+              recorrencias.map((rec) => (
+                <View key={rec.id} style={estilos.itemTransacao}>
+                  <View style={estilos.circuloAvatar}>
+                    <Ionicons
+                      name="repeat-outline"
+                      size={20}
+                      color={rec.ativa ? CORES.verde : CORES.textoSecundario}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={estilos.nomeTransacao} numberOfLines={1}>
+                      {rec.descricao}
+                    </Text>
+                    <Text style={estilos.subTransacao}>
+                      {rec.categoria} • Todo dia {rec.dia_vencimento} •{" "}
+                      {rec.ativa ? "Ativa" : "Pausada"}
+                    </Text>
+                  </View>
+                  <View style={estilos.direitaTransacao}>
+                    <Text
+                      style={[
+                        estilos.valorTransacao,
+                        rec.tipo === "GANHO" && { color: CORES.verde },
+                      ]}
+                    >
+                      {rec.tipo === "GANHO" ? "+" : "-"}
+                      {formatarMoeda(rec.valor)}
+                    </Text>
+                    <View style={{ flexDirection: "row", gap: 12 }}>
+                      <Pressable
+                        onPress={async () => {
+                          await apiFinancas.alternarRecorrencia(rec.id);
+                          carregarDados();
+                        }}
+                        hitSlop={8}
+                      >
+                        <Ionicons
+                          name={rec.ativa ? "pause-outline" : "play-outline"}
+                          size={16}
+                          color={CORES.dourado}
+                        />
+                      </Pressable>
+                      <Pressable
+                        onPress={async () => {
+                          await apiFinancas.excluirRecorrencia(rec.id);
+                          carregarDados();
+                        }}
+                        hitSlop={8}
+                      >
+                        <Ionicons
+                          name="trash-outline"
+                          size={16}
+                          color={CORES.textoSecundario}
+                        />
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
               ))
             )}
           </View>
@@ -582,6 +680,12 @@ const estilos = StyleSheet.create({
     color: CORES.textoSecundario,
     fontSize: 13,
     marginTop: 2,
+  },
+  linkParcelamento: {
+    color: CORES.dourado,
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: 3,
   },
   direitaTransacao: {
     alignItems: "flex-end",

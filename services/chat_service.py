@@ -4,9 +4,11 @@ from sqlalchemy import extract
 from datetime import date
 
 from models.chat import MensagemChat
-from services.groq_client import interpretar_mensagem_chat, gerar_analise_financeira
 from routes.routes import registrar_conforme_integracao, resumo
-from models.financas import Usuario, Financa
+from models.financas import Usuario, Financa, Recorrencia
+from services.groq_client import interpretar_mensagem_chat, gerar_analise_financeira, extrair_recorrencia
+from services.recorrencia_service import criar_recorrencia, processar_recorrencias_pendentes
+
 
 async def processar_mensagem_usuario(
         texto: str,
@@ -27,16 +29,23 @@ async def processar_mensagem_usuario(
     db.commit()
     db.refresh(msg_usuario)
 
+    processar_recorrencias_pendentes(db, usuario_id)
+    
     analise = interpretar_mensagem_chat(texto)
     intencao = analise.get("intencao")
 
     if intencao in {"REGISTRAR_GASTO", "REGISTRAR_GANHO"}:
         financa = await registrar_conforme_integracao(texto, usuario_id, db)
         tipo_resp = "card_transacao"
-        prefixo = "Ganho registrado" if financa.tipo == "GANHO" else "Gasto registrado"
-        conteudo_resp = f"{prefixo}: {financa.descricao} - R$ {financa.valor:.2f}"
+
+        if financa.parcela_total and financa.parcela_total > 1:
+            conteudo_resp = f"Parcelamento registrado ({financa.parcela_total}x de R$ {financa.valor:.2f}): {financa.descricao}"
+        else:
+            prefixo = "Ganho registrado" if financa.tipo == "GANHO" else "Gasto registrado"
+            conteudo_resp = f"{prefixo}: {financa.descricao} - R$ {financa.valor:.2f}"
         extras_resp = {"id": financa.id, "numero_usuario": financa.numero_usuario, "valor": financa.valor,
-                        "categoria": financa.categoria, "descricao": financa.descricao, "tipo": financa.tipo, "data": financa.data.strftime("%Y-%m-%d"), "origem": financa.origem}
+                        "categoria": financa.categoria, "descricao": financa.descricao, "tipo": financa.tipo, "data": financa.data.strftime("%Y-%m-%d"), 
+                        "origem": financa.origem, "parcela_atual": financa.parcela_atual, "parcela_total": financa.parcela_total, "grupo_parcelamento_id": financa.grupo_parcelamento_id}
 
     elif intencao == "CONSULTAR_SALDO":
         usuario = db.query(Usuario).filter(Usuario.id == usuario_id).first()
@@ -109,6 +118,32 @@ async def processar_mensagem_usuario(
             saldo_atual = usuario.saldo if usuario else 0.0,
             transacoes = transacoes_lista,
         )
+        extras_resp = None
+
+    elif intencao == "REGISTRAR_RECORRENCIA":
+        dados_rec = extrair_recorrencia(texto)
+        rec, lancou_este_mes = criar_recorrencia(db, usuario_id, dados_rec)
+        tipo_resp = "texto"
+        status_mes = "O lançamento deste mês já foi registrado." if lancou_este_mes else f"Será lançado automaticamente todo dia {rec.dia_vencimento}."
+        conteudo_resp = f"Recorrência cadastrada: {rec.descricao} - R$ {rec.valor:.2f}/mês (dia {rec.dia_vencimento}). {status_mes}"
+        extras_resp = None
+
+    elif intencao == "LISTAR_RECORRENCIAS":
+        recs = (
+            db.query(Recorrencia)
+            .filter(Recorrencia.usuario_id == usuario_id)
+            .order_by(Recorrencia.dia_vencimento.asc())
+            .all()
+        )
+        tipo_resp = "texto"
+        if not recs:
+            conteudo_resp = "Você ainda não tem assinaturas ou recorrências cadastradas."
+        else:
+            linhas = [
+                f"• {r.descricao}: R$ {r.valor:.2f} (dia {r.dia_vencimento}) {'[Ativa]' if r.ativa else '[Pausada]'}"
+                for r in recs
+            ]
+            conteudo_resp = "Suas assinaturas e recorrências:\n" + "\n".join(linhas)
         extras_resp = None
 
     else:
