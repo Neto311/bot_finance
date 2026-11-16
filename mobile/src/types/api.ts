@@ -22,6 +22,21 @@ export interface DadosTransacaoCard {
   tipo: string;
   data: string;
   origem?: string;
+  parcela_atual?: number | null;
+  parcela_total?: number | null;
+  grupo_parcelamento_id?: string | null;
+  recorrencia_id?: number | null;
+}
+
+export interface RecorrenciaItem {
+  id: number;
+  valor: number;
+  categoria: string;
+  descricao: string;
+  tipo: string;
+  dia_vencimento: number;
+  ativa: boolean;
+  ultima_competencia?: string | null;
 }
 
 export interface DadosResumoCard {
