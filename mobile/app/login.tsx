@@ -26,6 +26,35 @@ export default function TelaLogin() {
   const [erro, setErro] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
 
+  const handleLoginGoogle = () => {
+    const clientId = (process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || "").trim();
+    if (!clientId) {
+      setErro("Client ID do Google não configurado neste build.");
+      return;
+    }
+
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      const nonce = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      const redirectUri = window.location.origin;
+      const params = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: "id_token",
+        scope: "openid email profile",
+        nonce,
+        prompt: "select_account",
+      });
+      setErro(null);
+      setEnviando(true);
+      window.location.assign(
+        `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+      );
+      return;
+    }
+
+    setErro("Login com Google nativo disponível na versão Web/PWA.");
+  };
+
   const handleLogin = async () => {
     if (!email.trim() || !senha) {
       setErro("Insira seu e-mail e senha.");
@@ -131,14 +160,10 @@ export default function TelaLogin() {
             <Pressable
               style={({ pressed }) => [
                 estilos.botaoGoogle,
-                pressed && { opacity: 0.75 },
+                (enviando || pressed) && { opacity: 0.75 },
               ]}
-              onPress={() =>
-                Alert.alert(
-                  "Google Login",
-                  "Vamos ativar a chave OAuth do Google Cloud no próximo passo!"
-                )
-              }
+              onPress={handleLoginGoogle}
+              disabled={enviando}
             >
               <Ionicons name="logo-google" size={18} color="#FFFFFF" />
               <Text style={estilos.textoBotaoGoogle}>Continuar com Google</Text>
