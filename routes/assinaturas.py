@@ -135,7 +135,7 @@ async def webhook_stripe(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Assinatura do webhook inválida")
 
     tipo = evento["type"]
-    dados = evento["data"]["object"]
+    dados = evento["data"]["object"].to_dict()
 
     if tipo == "checkout.session.completed":
         ref_id = dados.get("client_reference_id") or dados.get("metadata", {}).get("usuario_id")
