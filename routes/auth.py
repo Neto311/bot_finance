@@ -34,6 +34,8 @@ def montar_resposta_tokens(usuario: Usuario) -> ResponseTokens:
             email=usuario.email,
             saldo=usuario.saldo,
             provedor_principal=provedor_principal,
+            plano = usuario.plano,
+            status_assinatura=usuario.status_assinatura,
         ),
     )
 
@@ -169,7 +171,9 @@ async def me(usuario_id: int = Depends(obter_usuario_id_atual), db: Session = De
         nome = usuario.nome,
         email = usuario.email,
         saldo = usuario.saldo,
-        provedor_principal= buscar_integracao_principal(usuario.id)
+        provedor_principal= buscar_integracao_principal(usuario.id),
+        plano = usuario.plano,
+        status_assinatura = usuario.status_assinatura,
     )   
 
 @auth_router.post("/esqueci-senha")

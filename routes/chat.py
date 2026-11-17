@@ -13,6 +13,9 @@ from schemas.chat import (
 )
 from services.chat_service import processar_mensagem_usuario
 from services.groq_client import extrair_audio
+from services.assinatura_service import exigir_plano_pro, verificar_limite_chat_texto
+
+
 
 chat_router = APIRouter(
     prefix="/chat",
@@ -47,6 +50,8 @@ async def enviar_texto(
     usuario_id: int = Depends(obter_usuario_id_atual),
     db: Session = Depends(get_db),
 ):
+    verificar_limite_chat_texto(db, usuario_id)
+
     msg_usuario, msg_assistente = await processar_mensagem_usuario(
         texto=dados.texto,
         usuario_id=usuario_id,
@@ -56,6 +61,7 @@ async def enviar_texto(
         "mensagem_usuario": msg_usuario,
         "mensagem_assistente": msg_assistente,
     }
+
 @chat_router.post("/audio", response_model=ResponseEnvioChat)
 async def enviar_audio(
     file: UploadFile = File(...),
@@ -63,6 +69,8 @@ async def enviar_audio(
     usuario_id: int = Depends(obter_usuario_id_atual),
     db: Session = Depends(get_db),
 ):
+    exigir_plano_pro(db, usuario_id, "Envio de áudio por voz")
+    
     extensao = os.path.splitext(file.filename or "")[1] or ".m4a"
     temp_path = None
     try:

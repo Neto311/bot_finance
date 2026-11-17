@@ -21,6 +21,8 @@ class ResponseUsuarioAuth(BaseModel):
     email: str
     saldo: float
     provedor_principal: str | None = None
+    plano: str = "free"
+    status_assinatura: str = "inativa"
 
 class ResponseTokens(BaseModel):
     access_token: str
@@ -35,3 +37,8 @@ class RequestRedefinirSenha(BaseModel):
     email: EmailStr
     codigo: str = Field(min_length=6, max_length=6)
     nova_senha: str = Field(min_length=8, max_length=128) 
+
+
+class RequestConcederPro(BaseModel):
+    email: EmailStr
+    dias: int | None = None

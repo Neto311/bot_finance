@@ -8,7 +8,9 @@ from routes.routes import registrar_conforme_integracao, resumo
 from models.financas import Usuario, Financa, Recorrencia
 from services.groq_client import interpretar_mensagem_chat, gerar_analise_financeira, extrair_recorrencia
 from services.recorrencia_service import criar_recorrencia, processar_recorrencias_pendentes
+from services.assinatura_service import exigir_plano_pro
 
+  
 
 async def processar_mensagem_usuario(
         texto: str,
@@ -92,6 +94,8 @@ async def processar_mensagem_usuario(
                     i.categoria, "descricao": i.descricao, "tipo": i.tipo, "data": i.data.strftime("%Y-%m-%d")} for i in itens]}
 
     elif intencao == "ANALISE_FINANCEIRA":
+        exigir_plano_pro(db, usuario_id, "Análise financeira com IA")
+        
         mes = int(analise.get("mes") or date.today().month)
         ano = int(analise.get("ano") or date.today().year)
 

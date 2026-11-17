@@ -25,11 +25,12 @@ import {
 } from "expo-audio";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../src/context/AuthContext";
-import { apiAuth, apiChat, apiFinancas } from "../src/services/api";
-import { DadosTransacaoCard, MensagemChat } from "../src/types/api";
+import { apiAssinatura, apiAuth, apiChat, apiFinancas, ErroPaywall } from "../src/services/api";
+import { DadosTransacaoCard, MensagemChat, StatusAssinatura } from "../src/types/api";
 import { BolhaMensagem } from "../src/components/BolhaMensagem";
 import { ModalEditarTransacao } from "../src/components/ModalEditarTransacao";
 import { ModalIntegracao } from "../src/components/ModalIntegracao";
+import { ModalPaywall } from "../src/components/ModalPaywall";
 import { VisaoDashboard } from "../src/components/VisaoDashboard";
 import { CORES } from "../src/theme/colors";
 
@@ -66,6 +67,17 @@ export default function TelaPrincipal() {
   const [modalExcluirVisivel, setModalExcluirVisivel] = useState(false);
   const [excluindoConta, setExcluindoConta] = useState(false);
   const [erroExcluir, setErroExcluir] = useState<string | null>(null);
+  const [statusAssinatura, setStatusAssinatura] = useState<StatusAssinatura | null>(null);
+  const [paywallVisivel, setPaywallVisivel] = useState(false);
+  const [motivoPaywall, setMotivoPaywall] = useState<string | null>(null);
+
+  const atualizarStatusAssinatura = () => {
+    apiAssinatura.obterStatus().then(setStatusAssinatura).catch(() => {});
+  };
+
+  useEffect(() => {
+    atualizarStatusAssinatura();
+  }, []);
 
   const flatListRef = useRef<FlatList<MensagemChat>>(null);
 
@@ -162,6 +174,12 @@ export default function TelaPrincipal() {
       ]);
       recarregarUsuario();
     } catch (e: any) {
+      if (e instanceof ErroPaywall) {
+        setMensagens((atuais) => atuais.filter((m) => m.id >= 0));
+        setMotivoPaywall(e.message);
+        setPaywallVisivel(true);
+        return;
+      }
       const msgErro: MensagemChat = {
         id: -Date.now() - 1,
         remetente: "assistente",
@@ -172,11 +190,17 @@ export default function TelaPrincipal() {
       setMensagens((atuais) => [...atuais, msgErro]);
     } finally {
       setAssistenteDigitando(false);
+      atualizarStatusAssinatura();
     }
   };
 
   const iniciarGravacaoAudio = async () => {
     try {
+      if (statusAssinatura && !statusAssinatura.eh_pro) {
+        setMotivoPaywall("Envio de áudio por voz é exclusivo do plano FinaceAi Pro.");
+        setPaywallVisivel(true);
+        return;
+      }
       const permissao = await AudioModule.requestRecordingPermissionsAsync();
       if (!permissao.granted) {
         Alert.alert("Microfone", "Permita o acesso ao microfone nos Ajustes.");
@@ -215,6 +239,12 @@ export default function TelaPrincipal() {
       ]);
       recarregarUsuario();
     } catch (e: any) {
+      if (e instanceof ErroPaywall) {
+        setMensagens((atuais) => atuais.filter((m) => m.id >= 0));
+        setMotivoPaywall(e.message);
+        setPaywallVisivel(true);
+        return;
+      }
       const msgErro: MensagemChat = {
         id: -Date.now(),
         remetente: "assistente",
@@ -225,6 +255,7 @@ export default function TelaPrincipal() {
       setMensagens((atuais) => [...atuais, msgErro]);
     } finally {
       setAssistenteDigitando(false);
+      atualizarStatusAssinatura();
     }
   };
 
@@ -298,6 +329,34 @@ export default function TelaPrincipal() {
       </View>
 
       <View style={estilos.menuLista}>
+        <Pressable
+          style={estilos.menuItem}
+          onPress={() => {
+            setMotivoPaywall(null);
+            setPaywallVisivel(true);
+          }}
+        >
+          <Ionicons
+            name="sparkles"
+            size={22}
+            color={statusAssinatura?.eh_pro ? CORES.verde : CORES.dourado}
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={estilos.menuTitulo}>
+              {statusAssinatura?.eh_pro ? "FinaceAi Pro (Ativo)" : "Plano Free"}
+            </Text>
+            <Text style={estilos.menuSub}>
+              {statusAssinatura?.eh_pro
+                ? "Mensagens, áudio e análise IA ilimitados"
+                : `${statusAssinatura?.mensagens_usadas_mes ?? 0}/${statusAssinatura?.limite_free ?? 30} mensagens este mês • Toque para assinar o Pro`}
+            </Text>
+          </View>
+          <Ionicons
+            name="chevron-forward"
+            size={18}
+            color={CORES.textoSecundario}
+          />
+        </Pressable>
         <Pressable
           style={estilos.menuItem}
           onPress={() => setModalIntegracaoVisivel(true)}
@@ -582,6 +641,12 @@ export default function TelaPrincipal() {
         provedorAtual={usuario?.provedor_principal ?? "local"}
         onFechar={() => setModalIntegracaoVisivel(false)}
         onAtualizado={recarregarUsuario}
+      />
+
+      <ModalPaywall
+        visivel={paywallVisivel}
+        motivo={motivoPaywall}
+        onFechar={() => setPaywallVisivel(false)}
       />
 
       <Modal visible={modalExcluirVisivel} transparent animationType="fade">

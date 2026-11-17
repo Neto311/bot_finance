@@ -4,6 +4,17 @@ export interface UsuarioAuth {
   email: string;
   saldo: number;
   provedor_principal: string | null;
+  plano?: string;
+  status_assinatura?: string;
+}
+
+export interface StatusAssinatura {
+  plano: string;
+  status_assinatura: string;
+  eh_pro: boolean;
+  mensagens_usadas_mes: number;
+  limite_free: number;
+  assinatura_expira_em: string | null;
 }
 
 export interface RespostaTokens {
