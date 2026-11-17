@@ -11,6 +11,7 @@ import {
   RespostaHistoricoChat,
   RespostaTokens,
   UsuarioAuth,
+  StatusAssinatura,
 } from "../types/api";
 
 function obterUrlApiPadrao(): string {
@@ -24,6 +25,13 @@ function obterUrlApiPadrao(): string {
   return Platform.OS === "android"
     ? "http://10.0.2.2:8000"
     : "http://localhost:8000";
+}
+
+export class ErroPaywall extends Error {
+  constructor(mensagem: string) {
+    super(mensagem);
+    this.name = "ErroPaywall";
+  }
 }
 
 export const API_BASE_URL = (
@@ -107,6 +115,9 @@ export async function requisicaoApi<T>(
       }
     } catch {
       // ignora erro de parse
+    }
+    if (resposta.status === 402) {
+      throw new ErroPaywall(mensagemErro);
     }
     throw new Error(mensagemErro);
   }
@@ -254,6 +265,9 @@ export const apiChat = {
       } catch {
         // ignora erro de parse
       }
+      if (resultado.status === 402) {
+        throw new ErroPaywall(mensagemErro);
+      }
       throw new Error(mensagemErro);
     }
 
@@ -355,4 +369,8 @@ export const apiFinancas = {
       method: "POST",
       body: JSON.stringify({ provedor }),
     }),
+};
+
+export const apiAssinatura = {
+  obterStatus: () => requisicaoApi<StatusAssinatura>("/assinatura/status"),
 };

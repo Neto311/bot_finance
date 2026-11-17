@@ -37,6 +37,11 @@ class Usuario(Base):
     proximo_numero_transacao = Column(Integer, nullable=False, default=1)
     codigo_recuperacao = Column(String(6), nullable=True)
     codigo_recuperacao_expira_em = Column(DateTime, nullable=True)
+    plano = Column(String(20), nullable=False, default="free", server_default="free")
+    status_assinatura = Column(String(30), nullable=False, default="inativa", server_default="inativa")
+    assinatura_expira_em = Column(DateTime, nullable=True)
+    gateway_cliente_id = Column(String(120), nullable=True)
+    gateway_assinatura_id = Column(String(120), nullable=True)
 
 class IdentidadeExterna(Base):
     __tablename__ = 'identidades_externas'
