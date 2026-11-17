@@ -373,4 +373,12 @@ export const apiFinancas = {
 
 export const apiAssinatura = {
   obterStatus: () => requisicaoApi<StatusAssinatura>("/assinatura/status"),
+  criarCheckout: () =>
+    requisicaoApi<{ checkout_url: string }>("/assinatura/checkout", {
+      method: "POST",
+    }),
+  abrirPortal: () =>
+    requisicaoApi<{ portal_url: string }>("/assinatura/portal", {
+      method: "POST",
+    }),
 };

@@ -1,6 +1,16 @@
 import React, { useState } from "react";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { apiAssinatura } from "../services/api";
 import { CORES } from "../theme/colors";
 
 interface Props {
@@ -17,7 +27,27 @@ const BENEFICIOS_PRO = [
 ];
 
 export function ModalPaywall({ visivel, motivo, onFechar }: Props) {
-  const [avisoCheckout, setAvisoCheckout] = useState(false);
+  const [carregandoCheckout, setCarregandoCheckout] = useState(false);
+  const [erroCheckout, setErroCheckout] = useState<string | null>(null);
+
+  const handleAssinar = async () => {
+    setErroCheckout(null);
+    setCarregandoCheckout(true);
+    try {
+      const resp = await apiAssinatura.criarCheckout();
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.location.assign(resp.checkout_url);
+      } else {
+        await Linking.openURL(resp.checkout_url);
+      }
+    } catch (e: any) {
+      setErroCheckout(
+        e?.message || "Não foi possível iniciar o pagamento agora."
+      );
+    } finally {
+      setCarregandoCheckout(false);
+    }
+  };
 
   return (
     <Modal visible={visivel} transparent animationType="fade">
@@ -58,25 +88,29 @@ export function ModalPaywall({ visivel, motivo, onFechar }: Props) {
               R$ 19,90<Text style={estilos.precoPeriodo}>/mês</Text>
             </Text>
             <Text style={estilos.precoSub}>
-              Cancele quando quiser • Pix ou Cartão
+              Cancele quando quiser • Cartão ou Apple Pay
             </Text>
           </View>
 
-          {avisoCheckout ? (
-            <Text style={estilos.avisoCheckout}>
-              Integração de pagamento (Pix e Cartão) será ativada no próximo
-              passo!
-            </Text>
+          {erroCheckout ? (
+            <Text style={estilos.erroCheckout}>{erroCheckout}</Text>
           ) : null}
 
           <Pressable
             style={({ pressed }) => [
               estilos.botaoAssinar,
-              pressed && { opacity: 0.85 },
+              (carregandoCheckout || pressed) && { opacity: 0.85 },
             ]}
-            onPress={() => setAvisoCheckout(true)}
+            onPress={handleAssinar}
+            disabled={carregandoCheckout}
           >
-            <Text style={estilos.textoBotaoAssinar}>Assinar FinaceAi Pro</Text>
+            {carregandoCheckout ? (
+              <ActivityIndicator color="#04131E" />
+            ) : (
+              <Text style={estilos.textoBotaoAssinar}>
+                Assinar FinaceAi Pro
+              </Text>
+            )}
           </Pressable>
 
           <Pressable onPress={onFechar} style={estilos.botaoDepois}>
@@ -168,8 +202,8 @@ const estilos = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
-  avisoCheckout: {
-    color: CORES.verde,
+  erroCheckout: {
+    color: CORES.perigo,
     fontSize: 12,
     textAlign: "center",
   },
