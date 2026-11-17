@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
+import { Platform } from "react-native";
 import { UsuarioAuth } from "../types/api";
 import { apiAuth } from "../services/api";
 import { limparTokens, obterAccessToken, salvarTokens } from "../services/storage";
@@ -35,7 +36,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    recarregarUsuario().finally(() => setCarregando(false));
+    const inicializarAuth = async () => {
+      if (Platform.OS === "web" && typeof window !== "undefined" && window.location.hash) {
+        const params = new URLSearchParams(window.location.hash.slice(1));
+        const idTokenGoogle = params.get("id_token");
+        if (idTokenGoogle) {
+          window.history.replaceState(null, "", window.location.pathname + window.location.search);
+          try {
+            await entrarComGoogle(idTokenGoogle);
+            return;
+          } catch {
+            // Se falhar o login Google, segue para verificação normal de token
+          }
+        }
+      }
+      await recarregarUsuario();
+    };
+
+    inicializarAuth().finally(() => setCarregando(false));
   }, []);
 
   const entrar = async (email: string, senha: string) => {

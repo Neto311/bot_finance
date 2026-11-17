@@ -17,6 +17,12 @@ api.usefinanceai.com.br {
 app.usefinanceai.com.br {
     root * /srv/pwa
     encode gzip
+
+    @noCache {
+        path / /index.html /manifest.json
+    }
+    header @noCache Cache-Control "no-store, no-cache, must-revalidate"
+
     try_files {path} /index.html
     file_server
 }
