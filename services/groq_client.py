@@ -3,12 +3,37 @@ from os import getenv
 from dotenv import load_dotenv
 import json
 from datetime import date
+import httpx
 
 load_dotenv()
 
 GROQ = getenv("GROQ")
+GEMINI_API_KEY = getenv("GEMINI_API_KEY")
 
 client = Groq(api_key = GROQ)
+
+
+def _chamar_llm(messages: list[dict], json_mode: bool = True) -> str:
+    kwargs = {"model": "openai/gpt-oss-120b", "messages": messages}
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+    try:
+        resp = client.chat.completions.create(**kwargs)
+        return resp.choices[0].message.content or ""
+    except Exception:
+        if not GEMINI_API_KEY:
+            raise
+        payload = {"model": "gemini-flash-lite-latest", "messages": messages}
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+        r = httpx.post(
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+            headers={"Authorization": f"Bearer {GEMINI_API_KEY}"},
+            json=payload,
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"] or ""
 
 PROMPT = ("""Você é um extrator de dados financeiros.
 
@@ -121,18 +146,15 @@ def extrair_colunas(texto_usuario: str, catalogo_categorias=None):
         catalogo = json.dumps(catalogo_categorias, ensure_ascii=False)
 
     mensagem_usuario = f"Data atual: {data_atual}\n Texto do usuário: {texto_usuario} \n Categorias disponíveis: {catalogo}"
-    completion = client.chat.completions.create(
-        model="openai/gpt-oss-120b",
-        messages = [
+    conteudo = _chamar_llm(
+        [
             {'role': 'system', 'content': PROMPT},
             {'role': 'user', 'content': mensagem_usuario}
         ],
-        response_format={ "type": "json_object" }
+        json_mode=True,
         )
-    
-    dados_extraidos = json.loads(completion.choices[0].message.content)
 
-    return dados_extraidos
+    return json.loads(conteudo)
 
 
 def extrair_audio(filename):
@@ -148,15 +170,14 @@ def extrair_audio(filename):
 def interpretar_mensagem_chat(texto_usuario:str):
     mensagem_usuario = f"Data atual: {date.today().isoformat()}\n Mensagem Usuário: {texto_usuario}"
 
-    completion = client.chat.completions.create(
-        model = "openai/gpt-oss-120b",
-        messages = [
-                    {'role': 'system', 'content': PROMPT_CHAT},
-                    {'role': 'user', 'content': mensagem_usuario}],
-        response_format = {"type": "json_object"}
+    conteudo = _chamar_llm(
+        [
+            {'role': 'system', 'content': PROMPT_CHAT},
+            {'role': 'user', 'content': mensagem_usuario}
+        ],
+        json_mode=True
     )
-
-    return json.loads(completion.choices[0].message.content)
+    return json.loads(conteudo)
 
 def gerar_analise_financeira(dados_resumo: dict, saldo_atual: float, transacoes: list[dict]) -> str:
     mensagem = (
@@ -173,28 +194,25 @@ def gerar_analise_financeira(dados_resumo: dict, saldo_atual: float, transacoes:
         "e dê 1 ou 2 recomendações concretas de economia."
     )
 
-    completion = client.chat.completions.create(
-        model = "openai/gpt-oss-120b",
-        messages = [
+    conteudo = _chamar_llm(
+        [
             {
                 "role": "system",
                 "content": "Você é um consultor financeiro pessoal direto, claro e prático. Não use Markdown pesado.",
             },
             {"role": "user", "content": mensagem},
         ],
+        json_mode=False
     )
-    return (completion.choices[0].message.content or "").strip()
+    return conteudo.strip()
 
 def extrair_recorrencia(texto_usuario: str):
     data_atual = date.today().isoformat()
-    completion = client.chat.completions.create(
-        model="openai/gpt-oss-120b",
-        messages=[
+    conteudo = _chamar_llm(
+       [
             {"role": "system", "content": PROMPT_RECORRENCIA},
             {"role": "user", "content": f"Data atual: {data_atual}\nTexto: {texto_usuario}"},
         ],
-        temperature=0,
-        max_completion_tokens=512,
-        response_format={"type": "json_object"},
+        json_mode=True
     )
-    return json.loads(completion.choices[0].message.content)
+    return json.loads(conteudo)

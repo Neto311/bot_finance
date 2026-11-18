@@ -70,6 +70,7 @@ services:
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       STRIPE_PRICE_ID: ${STRIPE_PRICE_ID:-}
       APP_URL: ${APP_URL:-https://app.usefinanceai.com.br}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
